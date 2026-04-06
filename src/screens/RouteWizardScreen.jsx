@@ -21,10 +21,10 @@ const ACTIVITIES = [
 ]
 
 const DISTANCE_OPTIONS = {
-  hiking: [5, 10, 20, 25], skiing: [5, 10, 20, 25], skitouring: [5, 10, 20, 25],
-  cycling: [15, 30, 60, 80], mtb: [15, 30, 60, 80],
+  hiking: [5, 10, 15, 20], skiing: [5, 10, 15, 20], skitouring: [5, 10, 15, 20],
+  cycling: [10, 20, 40, 60], mtb: [10, 20, 40, 60],
 }
-const DISTANCE_OVERFLOW = { hiking: 20, skiing: 20, skitouring: 20, cycling: 60, mtb: 60 }
+const ACTIVITY_SPEED = { hiking: 3.5, crosscountry: 8, skitouring: 2.5, skiing: 8, cycling: 18, mtb: 12 }
 
 const DIFFICULTY_OPTIONS = {
   hiking: [
@@ -114,6 +114,20 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   const [endLocation, setEndLocation] = useState(null)
   const [isLoop, setIsLoop] = useState(true)
   const [distanceKm, setDistanceKm] = useState(null)
+  const [isCustomDist, setIsCustomDist] = useState(false)
+  const [customDist, setCustomDist] = useState(10)
+  const selectedDistance = isCustomDist ? customDist : distanceKm
+
+  function estimateTime(km) {
+    if (!km || !activity) return ''
+    const speed = ACTIVITY_SPEED[activity] ?? 3.5
+    const hours = km / speed
+    const h = Math.floor(hours), m = Math.round((hours - h) * 60)
+    if (h === 0) return `~${m} min`
+    if (m === 0) return `~${h} hod`
+    return `~${h} hod ${m} min`
+  }
+
   const [difficulty, setDifficulty] = useState(null)
   const [challengeCount, setChallengeCount] = useState(5)
   const [challengeTypes, setChallengeTypes] = useState(['quiz', 'photo'])
@@ -153,10 +167,11 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
 
-  function next() { setStep((s) => Math.min(s + 1, TOTAL_STEPS)) }
+  // Step 4 (difficulty) was removed — skip it in both directions
+  function next() { setStep((s) => { const n = Math.min(s + 1, TOTAL_STEPS); return n === 4 ? 5 : n }) }
   function back() {
     if (step === 6) { setVariants([]); setGenError(null); setGenerating(false) }
-    setStep((s) => Math.max(s - 1, 0))
+    setStep((s) => { const n = Math.max(s - 1, 0); return n === 4 ? 3 : n })
   }
 
   async function useMyLocation() {
@@ -264,8 +279,12 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     })
   }
 
-  // Auto-skip step 4 (difficulty removed)
-  useEffect(() => { if (step === 4) setStep(5) }, [step])
+  // Step 4 (difficulty) removed — skip handled in next()/back()
+
+  // Save wizard state to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('tq_wizard', JSON.stringify({ mode, activity, distanceKm, isCustomDist, customDist, isLoop, challengeCount, challengeTypes, poiPrefs }))
+  }, [mode, activity, distanceKm, isCustomDist, customDist, isLoop, challengeCount, challengeTypes, poiPrefs])
 
   // Seasonal event banner
   useEffect(() => {
@@ -316,7 +335,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
       startName: startLocation?.name ?? manualSelected[0]?.name ?? 'Start',
       endLat: isLoop ? undefined : endLocation?.lat,
       endLng: isLoop ? undefined : endLocation?.lng,
-      isLoop, distanceKm: distanceKm ?? 10,
+      isLoop, distanceKm: selectedDistance ?? 10,
       challengeCount: pois?.length ?? challengeCount, challengeTypes, poiPreferences: poiPrefs,
       userId: user?.id, manualPOIs: pois,
     }
@@ -665,12 +684,36 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.step3Title')}</h2>
             <div className="wiz-option-grid">
-              {(DISTANCE_OPTIONS[activity] ?? DISTANCE_OPTIONS.hiking).map((km, idx, arr) => (
-                <button key={km} className={`wiz-option-btn ${distanceKm === km ? 'selected' : ''}`} onClick={() => { setDistanceKm(km); next() }}>
-                  {idx === arr.length - 1 ? `${DISTANCE_OVERFLOW[activity] ?? 20}+ km` : `${t('wizard.upTo')} ${km} km`}
+              {(DISTANCE_OPTIONS[activity] ?? DISTANCE_OPTIONS.hiking).map((km) => (
+                <button key={km} className={`wiz-option-btn ${!isCustomDist && distanceKm === km ? 'selected' : ''}`}
+                  onClick={() => { setDistanceKm(km); setIsCustomDist(false) }}>
+                  {km} km
                 </button>
               ))}
+              <button className={`wiz-option-btn ${isCustomDist ? 'selected' : ''}`}
+                onClick={() => setIsCustomDist(true)}>
+                {t('wizard.custom')}
+              </button>
             </div>
+
+            {isCustomDist && (
+              <div className="wiz-custom-dist">
+                <input className="form-input wiz-custom-input" type="number" min={2} max={100} step={1}
+                  value={customDist} onChange={(e) => setCustomDist(Math.min(100, Math.max(2, Number(e.target.value) || 2)))} />
+                <span className="wiz-custom-unit">km</span>
+                <p className="wiz-custom-range">{t('wizard.distRange')}</p>
+              </div>
+            )}
+
+            {selectedDistance && (
+              <p className="wiz-time-estimate">⏱ {t('wizard.estimatedTime')}: {estimateTime(selectedDistance)}</p>
+            )}
+
+            <p className="wiz-dist-hint">{t('wizard.distTolerance')}</p>
+
+            <button className="btn-primary" onClick={next} disabled={!selectedDistance}>
+              {t('wizard.next')}
+            </button>
           </div>
         )}
 
@@ -776,6 +819,13 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
                 <p className="wiz-lock-hint">🔒 {t('wizard.lockHint')}</p>
 
                 <RouteStats distanceKm={(generatedRoute?.routeLength ?? 0) / 1000} durationSec={generatedRoute?.routeDuration} ascentM={generatedRoute?.route?.elevation_gain_m} />
+                {selectedDistance && (() => {
+                  const actual = (generatedRoute?.routeLength ?? 0) / 1000
+                  const diff = Math.abs(actual - selectedDistance) / selectedDistance
+                  if (diff <= 0.1) return <p className="wiz-tolerance wiz-tolerance--ok">✓ {t('wizard.distMatch')}</p>
+                  if (diff <= 0.3) return <p className="wiz-tolerance wiz-tolerance--warn">≈ {t('wizard.distClose', { req: selectedDistance })}</p>
+                  return <p className="wiz-tolerance wiz-tolerance--far">⚠ {t('wizard.distFar', { req: selectedDistance })}</p>
+                })()}
                 <ElevationProfile geometry={generatedRoute?.routeGeometry} />
 
                 {/* Editable challenge list */}
