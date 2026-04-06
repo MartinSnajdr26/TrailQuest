@@ -26,11 +26,11 @@ function AppShell() {
   const { session, user, profile, needsUsername } = useAuth()
   const [tab, setTab] = useState('wizard')
   const [activeHike, setActiveHike] = useState(loadSavedHike)
+  const [hikeVisible, setHikeVisible] = useState(!!loadSavedHike())
   const [summary, setSummary] = useState(null)
   const [newBadges, setNewBadges] = useState(null)
   const [adminPending, setAdminPending] = useState(0)
 
-  // First launch — pre-auth onboarding
   const [firstLaunch] = useState(() => localStorage.getItem('tq_firstLaunch') !== 'done')
   const [showOnboarding, setShowOnboarding] = useState(firstLaunch)
 
@@ -42,9 +42,19 @@ function AppShell() {
     ]).then(([q, p]) => setAdminPending((q.count ?? 0) + (p.count ?? 0)))
   }, [profile?.is_admin])
 
+  // Persist active hike — save on every change, auto-save interval
   useEffect(() => {
     if (activeHike) localStorage.setItem(HIKE_KEY, JSON.stringify(activeHike))
     else localStorage.removeItem(HIKE_KEY)
+  }, [activeHike])
+
+  // Auto-save every 30s
+  useEffect(() => {
+    if (!activeHike) return
+    const id = setInterval(() => {
+      localStorage.setItem(HIKE_KEY, JSON.stringify(activeHike))
+    }, 30000)
+    return () => clearInterval(id)
   }, [activeHike])
 
   const handleChallengeCompleted = useCallback((challengeId) => {
@@ -54,6 +64,11 @@ function AppShell() {
       if (!completed.includes(challengeId)) completed.push(challengeId)
       return { ...prev, completedChallengeIds: completed }
     })
+  }, [])
+
+  // Save walked distance + paused time from ActiveHikeScreen
+  const handleHikeStateUpdate = useCallback((patch) => {
+    setActiveHike((prev) => prev ? { ...prev, ...patch } : prev)
   }, [])
 
   async function handleStartRoute(routeOrGenerated) {
@@ -73,7 +88,14 @@ function AppShell() {
       const { data: run } = await supabase.from('user_route_runs').insert({ user_id: user?.id, route_id: route.id, started_at: new Date().toISOString(), is_completed: false }).select('id').single()
       runId = run?.id ?? null
     } catch (e) { console.warn('Could not create route run:', e) }
-    setActiveHike({ route, challenges, routeGeometry, runId, startedAt: new Date().toISOString(), completedChallengeIds: [] })
+    const hike = { route, challenges, routeGeometry, runId, startedAt: new Date().toISOString(), completedChallengeIds: [], walkedKm: 0, totalPausedMs: 0 }
+    setActiveHike(hike)
+    setHikeVisible(true)
+  }
+
+  function resumeHike() {
+    // activeHike already loaded from localStorage
+    if (activeHike) setHikeVisible(true)
   }
 
   async function handleFinishHike(result) {
@@ -86,6 +108,7 @@ function AppShell() {
       supabase.from('user_route_runs').update(u).eq('id', runId).then(() => {})
     }
     setActiveHike(null)
+    setHikeVisible(false)
     let earned = [], isAmbassador = false
     if (user && result?.completed) {
       try {
@@ -101,18 +124,12 @@ function AppShell() {
     }
   }
 
-  // ── Pre-auth onboarding (first launch) ─────────────────────
-  if (showOnboarding) {
-    return <OnboardingScreen onComplete={() => setShowOnboarding(false)} />
-  }
-
-  // ── Auth gates ─────────────────────────────────────────────
+  if (showOnboarding) return <OnboardingScreen onComplete={() => setShowOnboarding(false)} />
   if (session === undefined) return <div className="splash" />
   if (!session) return <AuthScreen />
   if (profile === undefined) return <div className="splash" />
   if (needsUsername()) return <UsernameSetup />
 
-  // ── Overlays ───────────────────────────────────────────────
   if (newBadges?.length > 0) {
     return (
       <>
@@ -122,15 +139,31 @@ function AppShell() {
     )
   }
   if (summary) return <RouteSummary route={summary.route} hikeResult={summary.hikeResult} earnedBadges={summary.earnedBadges} weather={summary.weather} isAmbassador={summary.isAmbassador} onClose={() => setSummary(null)} />
-  if (activeHike) {
-    return <ActiveHikeScreen route={activeHike.route} challenges={activeHike.challenges} routeGeometry={activeHike.routeGeometry} runId={activeHike.runId} startedAt={activeHike.startedAt} completedChallengeIds={activeHike.completedChallengeIds} onChallengeCompleted={handleChallengeCompleted} onFinish={handleFinishHike} />
-  }
 
+  // Keep ActiveHikeScreen mounted (hidden) so map doesn't get destroyed
+  // Show it on top when hikeVisible=true
   return (
     <div className="app-shell">
+      {activeHike && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: hikeVisible ? 50 : -1, opacity: hikeVisible ? 1 : 0, pointerEvents: hikeVisible ? 'auto' : 'none' }}>
+          <ActiveHikeScreen
+            route={activeHike.route}
+            challenges={activeHike.challenges}
+            routeGeometry={activeHike.routeGeometry}
+            runId={activeHike.runId}
+            startedAt={activeHike.startedAt}
+            completedChallengeIds={activeHike.completedChallengeIds}
+            savedWalkedKm={activeHike.walkedKm}
+            savedTotalPausedMs={activeHike.totalPausedMs}
+            onChallengeCompleted={handleChallengeCompleted}
+            onStateUpdate={handleHikeStateUpdate}
+            onFinish={handleFinishHike}
+          />
+        </div>
+      )}
       <main className="app-main">
         {tab === 'wizard' && <RouteWizardScreen onRouteGenerated={handleStartRoute} />}
-        {tab === 'routes' && <RoutesScreen onStartRoute={handleStartRoute} activeHike={activeHike} onResumeHike={() => {}} />}
+        {tab === 'routes' && <RoutesScreen onStartRoute={handleStartRoute} activeHike={activeHike} onResumeHike={resumeHike} />}
         {tab === 'social' && <SocialScreen />}
         {tab === 'profile' && <ProfileScreen />}
       </main>

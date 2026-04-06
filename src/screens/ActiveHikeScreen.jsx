@@ -107,14 +107,13 @@ const S_MAP_BTN = {
 
 // ─────────────────────────────────────────────────────────────────────────
 
-export default function ActiveHikeScreen({ route, challenges, routeGeometry, runId, startedAt, completedChallengeIds, onChallengeCompleted, onFinish }) {
+export default function ActiveHikeScreen({ route, challenges, routeGeometry, runId, startedAt, completedChallengeIds, savedWalkedKm, savedTotalPausedMs, onChallengeCompleted, onStateUpdate, onFinish }) {
   const { user } = useAuth()
   const { t } = useTranslation()
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
   const [mapReady, setMapReady] = useState(false)
 
-  // Restore previously completed challenges from persisted state
   const restoredIds = completedChallengeIds ?? []
   const completedIdsRef = useRef(new Set(restoredIds))
   const triggeredIdsRef = useRef(new Set(restoredIds))
@@ -125,12 +124,13 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
   const [nextDist, setNextDist] = useState(null)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
 
-  // HUD state — restore elapsed from startedAt
-  const initialElapsed = startedAt ? Math.max(0, Date.now() - new Date(startedAt).getTime()) : 0
-  const [elapsed, setElapsed] = useState(initialElapsed)
-  const [walkedKm, setWalkedKm] = useState(0)
+  // HUD state — restore from persisted values
+  const totalPausedMsRef = useRef(savedTotalPausedMs ?? 0)
+  const startMs = startedAt ? new Date(startedAt).getTime() : Date.now()
+  const [elapsed, setElapsed] = useState(Math.max(0, Date.now() - startMs - totalPausedMsRef.current))
+  const [walkedKm, setWalkedKm] = useState(savedWalkedKm ?? 0)
   const prevPosRef = useRef(null)
-  const startTimeRef = useRef(startedAt ? new Date(startedAt).getTime() : Date.now())
+  const startTimeRef = useRef(startMs)
   const [paused, setPaused] = useState(false)
   const pausedAtRef = useRef(0)
   const [hudCollapsed, setHudCollapsed] = useState(false)
@@ -157,24 +157,27 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
     return () => audioGuide.stop()
   }, [])
 
-  // Timer — respects pause
+  // Timer — respects pause, uses totalPausedMs
   useEffect(() => {
-    startTimeRef.current = startedAt ? new Date(startedAt).getTime() : Date.now()
     if (paused) return
     const id = setInterval(() => {
-      setElapsed(Date.now() - startTimeRef.current - pausedAtRef.current)
+      setElapsed(Date.now() - startTimeRef.current - totalPausedMsRef.current)
     }, 1000)
     return () => clearInterval(id)
-  }, [startedAt, paused])
+  }, [paused])
 
   function togglePause() {
     if (paused) {
-      // Resume: adjust startTimeRef so elapsed continues from where it was
-      const pauseDuration = Date.now() - (startTimeRef.current + pausedAtRef.current + elapsed)
-      pausedAtRef.current += pauseDuration
+      // Resume: add pause duration to total
+      const dur = Date.now() - pausedAtRef.current
+      totalPausedMsRef.current += dur
+      pausedAtRef.current = 0
       setPaused(false)
+      onStateUpdate?.({ totalPausedMs: totalPausedMsRef.current })
     } else {
+      pausedAtRef.current = Date.now()
       setPaused(true)
+      onStateUpdate?.({ totalPausedMs: totalPausedMsRef.current })
     }
   }
 
@@ -260,7 +263,12 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
     if (!navigator.geolocation || sortedChallenges.length === 0) return
     const watchId = navigator.geolocation.watchPosition((pos) => {
       const coord = [pos.coords.longitude, pos.coords.latitude]
-      if (prevPosRef.current) { const d = haversineDistance(prevPosRef.current, coord); if (d > 3 && d < 500) setWalkedKm((p) => p + d / 1000) }
+      if (prevPosRef.current) {
+        const d = haversineDistance(prevPosRef.current, coord)
+        if (d > 3 && d < 500) {
+          setWalkedKm((p) => { const next = p + d / 1000; onStateUpdate?.({ walkedKm: next }); return next })
+        }
+      }
       prevPosRef.current = coord
       const next = sortedChallenges.find((ch, i) => !completedIdsRef.current.has(ch.id ?? `ch-${i}`))
       if (!next || next.lat == null || next.lng == null) { setNextDist(null); return }

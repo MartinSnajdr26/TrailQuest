@@ -123,9 +123,20 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   const [poiPrefs, setPoiPrefs] = useState(['pubs', 'landmarks', 'viewpoints', 'nature'])
 
   // POI picker state (fetched in background when step 4 completes)
-  const [fetchedPOIs, setFetchedPOIs] = useState(null) // null = not fetched, [] = empty
+  const [fetchedPOIs, setFetchedPOIs] = useState(null)
   const [selectedPOIIds, setSelectedPOIIds] = useState(new Set())
   const [poiFetching, setPoiFetching] = useState(false)
+
+  // Manual mode state
+  const [manualStep, setManualStep] = useState('search') // 'search' | 'settings'
+  const [manualSearch, setManualSearch] = useState('')
+  const [manualCategory, setManualCategory] = useState('')
+  const [manualResults, setManualResults] = useState([])
+  const [manualSelected, setManualSelected] = useState([]) // ordered POI list
+  const [manualSearching, setManualSearching] = useState(false)
+  const [userLat, setUserLat] = useState(null)
+  const [userLng, setUserLng] = useState(null)
+  const manualDebounceRef = useRef(null)
 
   // Step 6 state
   const [generating, setGenerating] = useState(false)
@@ -156,6 +167,86 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   }
 
   function toggleChallengeType(type) { setChallengeTypes((p) => p.includes(type) ? p.filter((t) => t !== type) : [...p, type]) }
+
+  // ── Manual mode: POI search ────────────────────────────────
+
+  // Get user GPS on manual mode start
+  useEffect(() => {
+    if (mode !== 'manual' || userLat) return
+    navigator.geolocation?.getCurrentPosition(
+      (pos) => { setUserLat(pos.coords.latitude); setUserLng(pos.coords.longitude) },
+      () => {}, { enableHighAccuracy: true, timeout: 8000 }
+    )
+  }, [mode])
+
+  async function searchManualPOIs(query, category) {
+    setManualSearching(true)
+    let results = []
+    // 1. Search custom DB
+    let q = supabase.from('custom_pois').select('*').eq('is_approved', true).eq('is_active', true)
+    if (query.length > 1) q = q.ilike('name', `%${query}%`)
+    if (category) q = q.eq('poi_category', category)
+    const { data: dbResults } = await q.limit(20)
+    results = (dbResults ?? []).map((p) => ({
+      id: p.id, name: p.name, description: p.description, category: p.poi_category,
+      lat: p.gps_lat, lng: p.gps_lng, quality: p.quality_score, source: 'db',
+      distanceKm: userLat ? (haversineDistance([userLng, userLat], [p.gps_lng, p.gps_lat]) / 1000).toFixed(1) : '?',
+    }))
+    // 2. Supplement with Mapy.com suggest
+    if (query.length > 2) {
+      try {
+        const items = await suggestPlace(query, userLat, userLng)
+        const mapyR = items.map((item) => ({
+          id: `mapy_${item.name}_${item.lat}`, name: item.name, description: item.label, category: 'other',
+          lat: item.lat, lng: item.lng, quality: 5, source: 'mapy',
+          distanceKm: userLat ? (haversineDistance([userLng, userLat], [item.lng, item.lat]) / 1000).toFixed(1) : '?',
+        }))
+        results = [...results, ...mapyR]
+      } catch { /* ignore */ }
+    }
+    results.sort((a, b) => parseFloat(a.distanceKm) - parseFloat(b.distanceKm))
+    setManualResults(results)
+    setManualSearching(false)
+  }
+
+  function handleManualSearchChange(e) {
+    const v = e.target.value
+    setManualSearch(v)
+    if (manualDebounceRef.current) clearTimeout(manualDebounceRef.current)
+    manualDebounceRef.current = setTimeout(() => searchManualPOIs(v, manualCategory), 300)
+  }
+
+  function handleManualCategoryTap(cat) {
+    const next = manualCategory === cat ? '' : cat
+    setManualCategory(next)
+    searchManualPOIs(manualSearch, next)
+  }
+
+  function addManualPOI(poi) {
+    if (manualSelected.some((p) => p.id === poi.id)) return
+    setManualSelected((prev) => [...prev, poi])
+  }
+
+  function removeManualPOI(id) {
+    setManualSelected((prev) => prev.filter((p) => p.id !== id))
+  }
+
+  function moveManualPOI(idx, dir) {
+    setManualSelected((prev) => {
+      const arr = [...prev]
+      const newIdx = idx + dir
+      if (newIdx < 0 || newIdx >= arr.length) return arr
+      ;[arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]
+      return arr
+    })
+  }
+
+  // Load default nearby POIs when entering manual mode
+  useEffect(() => {
+    if (mode === 'manual' && manualResults.length === 0 && userLat) {
+      searchManualPOIs('', '')
+    }
+  }, [mode, userLat])
   function togglePoiPref(id) { setPoiPrefs((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]) }
 
   function togglePOI(idx) {
@@ -211,15 +302,20 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     async function run() {
       setGenerating(true); setGenError(null)
       try {
-        // Pass user-selected POIs if available
-        const manualPOIs = fetchedPOIs && selectedPOIIds.size > 0
-          ? [...selectedPOIIds].map((i) => fetchedPOIs[i]).filter(Boolean)
-          : undefined
+        // Manual mode: use user-selected POIs directly
+        const pois = mode === 'manual' && manualSelected.length > 0
+          ? manualSelected
+          : (fetchedPOIs && selectedPOIIds.size > 0 ? [...selectedPOIIds].map((i) => fetchedPOIs[i]).filter(Boolean) : undefined)
+        const sLat = startLocation?.lat ?? (manualSelected[0]?.lat ?? userLat ?? 50.08)
+        const sLng = startLocation?.lng ?? (manualSelected[0]?.lng ?? userLng ?? 14.42)
+        const sName = startLocation?.name ?? manualSelected[0]?.name ?? 'Start'
         const result = await generateRoute({
-          activity, startLat: startLocation.lat, startLng: startLocation.lng, startName: startLocation.name,
-          endLat: isLoop ? startLocation.lat : endLocation?.lat, endLng: isLoop ? startLocation.lng : endLocation?.lng,
-          isLoop, distanceKm, difficulty, challengeCount, challengeTypes, poiPreferences: poiPrefs,
-          userId: user?.id, manualPOIs,
+          activity: activity ?? 'hiking',
+          startLat: sLat, startLng: sLng, startName: sName,
+          endLat: isLoop ? sLat : (endLocation?.lat ?? sLat), endLng: isLoop ? sLng : (endLocation?.lng ?? sLng),
+          isLoop, distanceKm: distanceKm ?? 10, difficulty: difficulty ?? 'medium',
+          challengeCount: pois?.length ?? challengeCount, challengeTypes, poiPreferences: poiPrefs,
+          userId: user?.id, manualPOIs: pois,
           onProgress: (stage) => {
             if (cancelled) return
             const msgs = { searching: t('wizard.progSearching'), planning: t('wizard.progPlanning'), challenges: t('wizard.progChallenges'), saving: t('wizard.progSaving'), done: t('wizard.progDone') }
@@ -328,8 +424,117 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
             <button className="seasonal-close" onClick={() => setSeasonalEvent(null)}>×</button>
           </div>
         )}
-        {/* Step 1 */}
-        {step === 1 && (
+        {/* Step 1 — Activity (surprise) OR POI search (manual) */}
+        {step === 1 && mode === 'manual' && manualStep === 'search' && (
+          <div className="wiz-step">
+            <h2 className="wiz-title">🗺 {t('wizard.manualSearchTitle')}</h2>
+
+            {/* Search input */}
+            <input className="form-input" type="text" placeholder={`🔍 ${t('wizard.manualSearchPh')}`}
+              value={manualSearch} onChange={handleManualSearchChange} />
+
+            {/* Category pills */}
+            <div className="wiz-chip-row" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+              {[
+                { id: 'minipivovar', icon: '🍺' }, { id: 'pamatnik', icon: '🏰' }, { id: 'vyhlidka', icon: '👁' },
+                { id: 'studanka', icon: '💧' }, { id: 'horska_chata', icon: '🏠' }, { id: 'vinna_sklep', icon: '🍷' },
+                { id: 'kaplička', icon: '⛪' },
+              ].map((c) => (
+                <button key={c.id} className={`wiz-chip ${manualCategory === c.id ? 'selected' : ''}`}
+                  onClick={() => handleManualCategoryTap(c.id)} style={{ flexShrink: 0 }}>
+                  {c.icon} {c.id}
+                </button>
+              ))}
+            </div>
+
+            {/* Results */}
+            <div className="manual-results">
+              {manualSearching && <div className="wiz-loading-msg">🔍...</div>}
+              {!manualSearching && manualResults.length === 0 && manualSearch.length > 1 && (
+                <p className="wiz-poi-empty">{t('wizard.noPlacesFound')}</p>
+              )}
+              {manualResults.map((poi) => {
+                const isAdded = manualSelected.some((p) => p.id === poi.id)
+                return (
+                  <div key={poi.id} className="manual-result-row">
+                    <span className="manual-result-icon">{POI_ICONS[poi.category] ?? '📍'}</span>
+                    <div className="manual-result-info">
+                      <span className="manual-result-name">{poi.name}</span>
+                      {poi.description && <span className="manual-result-desc">{poi.description.slice(0, 60)}</span>}
+                    </div>
+                    <span className="manual-result-dist">{poi.distanceKm} km</span>
+                    <button className={`manual-add-btn ${isAdded ? 'added' : ''}`} onClick={() => isAdded ? removeManualPOI(poi.id) : addManualPOI(poi)}>
+                      {isAdded ? '✓' : '+'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Selected list */}
+            {manualSelected.length > 0 && (
+              <div className="manual-selected">
+                <h3 className="wiz-section-label">{t('wizard.manualSelectedLabel')} ({manualSelected.length})</h3>
+                {manualSelected.map((poi, i) => (
+                  <div key={poi.id} className="manual-selected-row">
+                    <span className="manual-selected-order">{i + 1}</span>
+                    <span className="manual-selected-icon">{POI_ICONS[poi.category] ?? '📍'}</span>
+                    <span className="manual-selected-name">{poi.name}</span>
+                    <button className="manual-move-btn" onClick={() => moveManualPOI(i, -1)} disabled={i === 0}>↑</button>
+                    <button className="manual-move-btn" onClick={() => moveManualPOI(i, 1)} disabled={i === manualSelected.length - 1}>↓</button>
+                    <button className="manual-remove-btn" onClick={() => removeManualPOI(poi.id)}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button className="btn-primary" onClick={() => setManualStep('settings')} disabled={manualSelected.length < 1}>
+              {t('wizard.manualContinue')} ({manualSelected.length}) →
+            </button>
+          </div>
+        )}
+
+        {/* Manual mode step 2: settings */}
+        {step === 1 && mode === 'manual' && manualStep === 'settings' && (
+          <div className="wiz-step">
+            <h2 className="wiz-title">{t('wizard.manualSettingsTitle')}</h2>
+
+            <div className="wiz-section">
+              <h3 className="wiz-section-label">{t('wizard.step1Title')}</h3>
+              <div className="wiz-activity-grid">
+                {ACTIVITIES.map((a) => (
+                  <button key={a.id} className={`wiz-activity-btn ${activity === a.id ? 'selected' : ''}`} onClick={() => setActivity(a.id)}>
+                    <span className="wiz-activity-icon">{a.icon}</span>
+                    <span className="wiz-activity-label">{t(a.labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="wiz-loop-toggle">
+              <button className={`wiz-toggle-btn ${isLoop ? 'active' : ''}`} onClick={() => setIsLoop(true)}>⟳ {t('wizard.loop')}</button>
+              <button className={`wiz-toggle-btn ${!isLoop ? 'active' : ''}`} onClick={() => setIsLoop(false)}>→ {t('wizard.pointToPoint')}</button>
+            </div>
+
+            <button className="btn-secondary" onClick={() => setManualStep('search')}>← {t('wizard.manualBackToSearch')}</button>
+
+            <button className="btn-primary" onClick={() => {
+              // Use first manual POI as start, generate route
+              const start = manualSelected[0]
+              if (!start || !activity) return
+              setStartLocation({ name: start.name, lat: start.lat, lng: start.lng })
+              setChallengeCount(manualSelected.length)
+              setDistanceKm(10)
+              setDifficulty('medium')
+              setStep(6) // jump to generation
+            }} disabled={!activity}>
+              🚀 {t('wizard.generate')}
+            </button>
+          </div>
+        )}
+
+        {/* Step 1 — Activity (surprise mode only) */}
+        {step === 1 && mode !== 'manual' && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.step1Title')}</h2>
             <div className="wiz-activity-grid">
@@ -464,6 +669,9 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
             {genError && <div className="wiz-error"><p>{genError}</p><button className="btn-primary" onClick={() => { setGenError(null); setGenerating(false); setGeneratedRoute(null) }}>{t('wizard.retry')}</button></div>}
             {generatedRoute && (
               <>
+                <div className="wiz-preview-mode-label">
+                  {mode === 'manual' ? `🗺 ${t('wizard.manualRouteLabel')}` : `🎲 ${t('wizard.autoRouteLabel')}`}
+                </div>
                 <div ref={mapContainer} className="wiz-preview-map" />
                 <p className="wiz-lock-hint">🔒 {t('wizard.lockHint')}</p>
 

@@ -1915,3 +1915,44 @@ h1, h2, h3 { font-weight: 600; }
 .help-footer { text-align: center; padding: 20px 0; }
 .help-footer-text { font-size: 14px; color: var(--text-muted); margin-bottom: 12px; }
 .help-footer-btn { display: inline-block; text-decoration: none; width: auto; padding: 10px 24px; }
+
+/* ─── Manual POI search ─────────────────────────────────────────────────── */
+.manual-results { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+.manual-result-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; font-size: 13px;
+}
+.manual-result-icon { font-size: 18px; flex-shrink: 0; }
+.manual-result-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.manual-result-name { font-weight: 600; }
+.manual-result-desc { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manual-result-dist { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+.manual-add-btn {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+  background: var(--accent); color: #0d1117; border: none;
+  transition: background 0.15s;
+}
+.manual-add-btn.added { background: var(--surface-2); color: var(--accent); border: 2px solid var(--accent); }
+
+.manual-selected { display: flex; flex-direction: column; gap: 4px; }
+.manual-selected-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; background: var(--accent-dim); border: 1px solid var(--accent);
+  border-radius: 8px; font-size: 13px;
+}
+.manual-selected-order { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #0d1117; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.manual-selected-icon { font-size: 14px; }
+.manual-selected-name { flex: 1; font-weight: 500; }
+.manual-move-btn { width: 24px; height: 24px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; cursor: pointer; color: var(--text); display: flex; align-items: center; justify-content: center; }
+.manual-move-btn:disabled { opacity: 0.3; }
+.manual-remove-btn { width: 24px; height: 24px; border-radius: 4px; background: none; border: none; color: var(--danger); font-size: 16px; font-weight: 700; cursor: pointer; }
+
+/* Preview mode label */
+.wiz-preview-mode-label { text-align: center; font-size: 14px; font-weight: 600; padding: 4px 0; }
+
+/* Resume banner enhancements */
+.resume-banner-route { font-size: 15px; font-weight: 700; margin-top: 2px; }
+.resume-banner-btn { width: auto; padding: 8px 16px; font-size: 13px; flex-shrink: 0; }

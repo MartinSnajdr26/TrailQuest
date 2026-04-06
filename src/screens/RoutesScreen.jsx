@@ -144,13 +144,15 @@ export default function RoutesScreen({ onStartRoute, activeHike, onResumeHike })
           <div className="resume-banner-text">
             <span className="resume-banner-icon">▶</span>
             <div>
-              <div className="resume-banner-title">{t('myRoutes.resumeTitle')}: {activeHike.route?.name}</div>
+              <div className="resume-banner-title">{t('myRoutes.resumeTitle')}</div>
+              <div className="resume-banner-route">{activeHike.route?.name}</div>
               <div className="resume-banner-meta">
                 {t('hike.challenge')} {(activeHike.completedChallengeIds?.length ?? 0)}/{activeHike.challenges?.length ?? 0}
+                {activeHike.walkedKm > 0 && <span> · 📏 {Number(activeHike.walkedKm).toFixed(1)} km</span>}
               </div>
             </div>
           </div>
-          <span className="resume-banner-arrow">→</span>
+          <button className="btn-primary resume-banner-btn">▶ {t('myRoutes.resumeBtn')}</button>
         </div>
       )}
 
