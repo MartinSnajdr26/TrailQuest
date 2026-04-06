@@ -2115,3 +2115,26 @@ h1, h2, h3 { font-weight: 600; font-family: 'Inter', system-ui, sans-serif; }
 .wiz-tolerance--ok { color: var(--md-primary); }
 .wiz-tolerance--warn { color: var(--md-tertiary); }
 .wiz-tolerance--far { color: var(--md-error); }
+
+/* ─── Challenge counter ─────────────────────────────────────────────────── */
+.wiz-counter {
+  display: flex; align-items: center; justify-content: center; gap: 32px; margin: 24px 0 8px;
+}
+.wiz-counter-btn {
+  width: 56px; height: 56px; border-radius: 50%; font-size: 28px; font-weight: 300;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--dur-short) var(--motion); cursor: pointer;
+}
+.wiz-counter-minus {
+  border: 2px solid var(--md-outline); background: var(--md-surface-container-high);
+  color: var(--md-on-surface);
+}
+.wiz-counter-minus:disabled { opacity: 0.3; cursor: default; }
+.wiz-counter-plus {
+  border: none; background: var(--md-primary); color: var(--md-on-primary);
+}
+.wiz-counter-plus:disabled { background: var(--md-surface-container); color: var(--md-on-surface-variant); cursor: default; }
+.wiz-counter-display { display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+.wiz-counter-num { font-size: 56px; font-weight: 500; color: var(--md-primary); line-height: 1; }
+.wiz-counter-label { font-size: 14px; color: var(--md-on-surface-variant); margin-top: 4px; }
+.wiz-counter-hint { text-align: center; font-size: 13px; color: var(--md-on-surface-variant); line-height: 1.4; }

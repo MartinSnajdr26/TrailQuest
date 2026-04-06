@@ -176,8 +176,29 @@ function generateRouteName(activity, startName, pois) {
 export async function generateRoute({
   activity, startLat, startLng, startName, endLat, endLng, isLoop,
   distanceKm, difficulty, challengeCount, challengeTypes, poiPreferences,
-  userId, manualPOIs, onProgress,
+  userId, manualPOIs, onProgress, dryRun = false, preGeneratedRoute,
 }) {
+  // Fast path: save a previously generated dryRun result
+  if (preGeneratedRoute) {
+    const { route: r, challenges: chs, routeGeometry: geo } = preGeneratedRoute
+    const { data: saved, error } = await supabase.from('routes').insert({
+      name: r.name, description: r.description, activity_type: r.activity_type, distance_km: r.distance_km,
+      is_loop: r.is_loop, region: r.region, elevation_gain_m: r.elevation_gain_m, duration_sec: r.duration_sec,
+      start_lat: r.start_lat ?? startLat, start_lng: r.start_lng ?? startLng,
+      gpx_data: typeof geo === 'string' ? geo : JSON.stringify(geo), created_by: userId,
+    }).select().single()
+    if (error) throw new Error(`Save failed: ${error.message}`)
+    const chInserts = chs.map((c, i) => ({
+      route_id: saved.id, sequence_order: i, type: c.type, title: c.title ?? c.poi_name,
+      description: c.description ?? c.content_json?.task, question: c.question ?? c.content_json?.task,
+      options: c.options ? (typeof c.options === 'string' ? c.options : JSON.stringify(c.options)) : null,
+      correct_answer: c.correct_answer ?? c.content_json?.correct_answer ?? null,
+      prompt: c.prompt ?? c.content_json?.alternative ?? null, lat: c.lat ?? c.gps_lat, lng: c.lng ?? c.gps_lng,
+    }))
+    await supabase.from('challenges').insert(chInserts)
+    return { route: saved, challenges: chInserts, routeGeometry: geo, routeLength: (r.distance_km ?? 0) * 1000, routeDuration: r.duration_sec ?? 0 }
+  }
+
   let selectedPOIs = []
 
   // ── MANUAL MODE: optimize user's POI order ─────────────────
@@ -251,33 +272,47 @@ export async function generateRoute({
     challenges.push({ ...ch, gps_lat: Number(poi.lat), gps_lng: Number(poi.lng), poi_name: poi.name, poi_type: poi.poiType ?? poi.category })
   }
 
-  // ── SAVE TO SUPABASE ───────────────────────────────────────
+  // ── BUILD RESULT ────────────────────────────────────────────
 
-  onProgress?.('saving')
   const routeName = generateRouteName(activity, startName, challengePOIs)
   const geometry = routeResult.geometry
 
-  const { data: route, error: routeErr } = await supabase.from('routes').insert({
-    name: routeName,
-    description: `${challengePOIs.length} zastávek, ${routeKm.toFixed(1)} km`,
+  const routeData = {
+    name: routeName, description: `${challengePOIs.length} zastávek, ${routeKm.toFixed(1)} km`,
     activity_type: activity ?? 'hiking', distance_km: routeKm,
     is_loop: isLoop, region: startName ?? '', elevation_gain_m: Math.round(routeResult.ascent ?? 0),
     duration_sec: Math.round(routeResult.duration ?? 0),
-    start_lat: startLat, start_lng: startLng, gpx_data: JSON.stringify(geometry), created_by: userId,
+    start_lat: startLat, start_lng: startLng,
+  }
+
+  const challengeInserts = challenges.map((ch, i) => ({
+    sequence_order: i, type: ch.type, title: ch.poi_name,
+    description: ch.content_json?.task, question: ch.content_json?.task,
+    options: ch.content_json?.options ? JSON.stringify(ch.content_json.options) : null,
+    correct_answer: ch.content_json?.correct_answer ?? null, prompt: ch.content_json?.alternative ?? null,
+    lat: ch.gps_lat, lng: ch.gps_lng, content_json: ch.content_json, poi_type: ch.poi_type,
+  }))
+
+  // ── DRY RUN: return without saving ────────────────────────
+
+  if (dryRun) {
+    onProgress?.('done')
+    return { route: { ...routeData, id: `preview_${Date.now()}` }, challenges: challengeInserts, routeGeometry: geometry, routeLength: routeResult.distance, routeDuration: routeResult.duration, isDryRun: true }
+  }
+
+  // ── SAVE TO SUPABASE ──────────────────────────────────────
+
+  onProgress?.('saving')
+  const { data: route, error: routeErr } = await supabase.from('routes').insert({
+    ...routeData, gpx_data: JSON.stringify(geometry), created_by: userId,
   }).select().single()
 
   if (routeErr) throw new Error(`Nepodařilo se uložit trasu: ${routeErr.message}`)
 
-  const inserts = challenges.map((ch, i) => ({
-    route_id: route.id, sequence_order: i, type: ch.type, title: ch.poi_name,
-    description: ch.content_json?.task, question: ch.content_json?.task,
-    options: ch.content_json?.options ? JSON.stringify(ch.content_json.options) : null,
-    correct_answer: ch.content_json?.correct_answer ?? null, prompt: ch.content_json?.alternative ?? null,
-    lat: ch.gps_lat, lng: ch.gps_lng,
-  }))
-  await supabase.from('challenges').insert(inserts)
+  const dbInserts = challengeInserts.map((ch) => ({ ...ch, route_id: route.id, content_json: undefined, poi_type: undefined }))
+  await supabase.from('challenges').insert(dbInserts)
 
   onProgress?.('done')
 
-  return { route, challenges: inserts, routeGeometry: geometry, routeLength: routeResult.distance, routeDuration: routeResult.duration }
+  return { route, challenges: dbInserts, routeGeometry: geometry, routeLength: routeResult.distance, routeDuration: routeResult.duration, isDryRun: false }
 }

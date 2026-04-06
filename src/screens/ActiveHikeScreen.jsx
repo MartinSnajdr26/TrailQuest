@@ -231,6 +231,17 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
     if (segments[fitIdx]) fitSegment(map, segments[fitIdx])
   }, [mapReady, segments, sortedChallenges])
 
+  // Add GPS user location dot
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    if (map.getSource('user-loc')) return
+    map.addSource('user-loc', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'Point', coordinates: allCoords?.[0] ?? [15.4, 49.8] } } })
+    map.addLayer({ id: 'user-loc-glow', type: 'circle', source: 'user-loc', paint: { 'circle-radius': 18, 'circle-color': '#22c55e', 'circle-opacity': 0.12 } })
+    map.addLayer({ id: 'user-loc-ring', type: 'circle', source: 'user-loc', paint: { 'circle-radius': 10, 'circle-color': '#ffffff', 'circle-opacity': 1 } })
+    map.addLayer({ id: 'user-loc-dot', type: 'circle', source: 'user-loc', paint: { 'circle-radius': 7, 'circle-color': '#22c55e', 'circle-opacity': 1 } })
+  }, [mapReady])
+
   // Animate newly unlocked segment
   const prevUnlockedRef = useRef(restoredIds.length + 1)
   useEffect(() => {
@@ -270,6 +281,9 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
         }
       }
       prevPosRef.current = coord
+      // Update user location dot on map
+      const locSrc = mapRef.current?.getSource('user-loc')
+      if (locSrc) locSrc.setData({ type: 'Feature', geometry: { type: 'Point', coordinates: coord } })
       const next = sortedChallenges.find((ch, i) => !completedIdsRef.current.has(ch.id ?? `ch-${i}`))
       if (!next || next.lat == null || next.lng == null) { setNextDist(null); return }
       const dist = haversineDistance(coord, [Number(next.lng), Number(next.lat)])

@@ -366,7 +366,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
         configs[2].manualPOIs = [...base.manualPOIs].reverse()
       }
 
-      const results = await Promise.allSettled(configs.map((c) => generateRoute(c)))
+      const results = await Promise.allSettled(configs.map((c) => generateRoute({ ...c, dryRun: true })))
       if (cancelled) return
 
       const successful = results.filter((r) => r.status === 'fulfilled').map((r) => r.value).filter(Boolean)
@@ -415,7 +415,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     // Regenerate route with new waypoints
     try {
       const pois = newChallenges.map((c) => ({ name: c.title, lat: c.lat, lng: c.lng, poiType: c.poi_type }))
-      const result = await generateRoute({ ...getGenParams(pois) })
+      const result = await generateRoute({ ...getGenParams(pois), dryRun: true })
       setVariants((prev) => { const next = [...prev]; next[activeVariant] = result; return next })
     } catch (e) { console.warn('Regen failed:', e) }
     setEditingStopIdx(null); setRegenerating(false)
@@ -430,7 +430,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     setRegenerating(true)
     try {
       const pois = challenges.map((c) => ({ name: c.title, lat: c.lat, lng: c.lng, poiType: c.poi_type }))
-      const result = await generateRoute({ ...getGenParams(pois) })
+      const result = await generateRoute({ ...getGenParams(pois), dryRun: true })
       setVariants((prev) => { const next = [...prev]; next[activeVariant] = result; return next })
     } catch (e) { console.warn('Reorder regen failed:', e) }
     setRegenerating(false)
@@ -439,7 +439,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   async function refreshAllStops() {
     setRegenerating(true); setVariants([]); setActiveVariant(0)
     try {
-      const result = await generateRoute({ ...getGenParams(undefined), onProgress: (s) => setProgressMsg(s) })
+      const result = await generateRoute({ ...getGenParams(undefined), dryRun: true, onProgress: (s) => setProgressMsg(s) })
       setVariants([result])
     } catch (e) { setGenError(e.message) }
     setRegenerating(false)
@@ -726,13 +726,17 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
             <div className="wiz-section">
               <h3 className="wiz-section-label">{t('wizard.howManyStops')}</h3>
-              <div className="wiz-count-row">
-                {[3, 5, 7].map((n) => (
-                  <button key={n} className={`wiz-count-btn ${challengeCount === n ? 'selected' : ''}`} onClick={() => setChallengeCount(n)}>{n}</button>
-                ))}
-                <input type="number" className="wiz-count-input" min={1} max={10} value={challengeCount}
-                  onChange={(e) => setChallengeCount(Math.min(10, Math.max(1, Number(e.target.value) || 1)))} />
+              <div className="wiz-counter">
+                <button className="wiz-counter-btn wiz-counter-minus" onClick={() => { navigator.vibrate?.(30); setChallengeCount((p) => Math.max(1, p - 1)) }} disabled={challengeCount <= 1}>−</button>
+                <div className="wiz-counter-display">
+                  <span className="wiz-counter-num">{challengeCount}</span>
+                  <span className="wiz-counter-label">{challengeCount === 1 ? t('wizard.stop1') : challengeCount < 5 ? t('wizard.stops234') : t('wizard.stops5plus')}</span>
+                </div>
+                <button className="wiz-counter-btn wiz-counter-plus" onClick={() => { navigator.vibrate?.(30); setChallengeCount((p) => Math.min(10, p + 1)) }} disabled={challengeCount >= 10}>+</button>
               </div>
+              <p className="wiz-counter-hint">
+                {challengeCount <= 3 ? t('wizard.countHintShort') : challengeCount <= 6 ? t('wizard.countHintMedium') : t('wizard.countHintLong')}
+              </p>
             </div>
 
             <div className="wiz-section">
@@ -845,7 +849,18 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
                 <div className="wiz-preview-actions">
                   <button className="btn-secondary" onClick={() => { setStep(5); setVariants([]) }}>← {t('wizard.edit')}</button>
                   <button className="btn-secondary" onClick={refreshAllStops} disabled={regenerating}>🔄 {t('wizard.refreshStops')}</button>
-                  <button className="btn-primary wiz-start-btn" onClick={() => onRouteGenerated(generatedRoute)}>🚀 {t('wizard.startAdventure')}</button>
+                  <button className="btn-primary wiz-start-btn" disabled={regenerating} onClick={async () => {
+                    if (!generatedRoute) return
+                    if (generatedRoute.isDryRun) {
+                      setRegenerating(true)
+                      try {
+                        const saved = await generateRoute({ ...getGenParams(), dryRun: false, preGeneratedRoute: generatedRoute, userId: user?.id })
+                        onRouteGenerated(saved)
+                      } catch (e) { setGenError(e.message); setRegenerating(false) }
+                    } else {
+                      onRouteGenerated(generatedRoute)
+                    }
+                  }}>🚀 {t('wizard.startAdventure')}</button>
                 </div>
               </>
             )}
