@@ -108,7 +108,8 @@ function formatDuration(seconds) {
 export default function RouteWizardScreen({ onRouteGenerated }) {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(0) // 0 = mode select
+  const [mode, setMode] = useState(null) // 'surprise' | 'manual'
 
   const [seasonalEvent, setSeasonalEvent] = useState(null)
   const [activity, setActivity] = useState(null)
@@ -138,7 +139,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   function next() { setStep((s) => Math.min(s + 1, TOTAL_STEPS)) }
   function back() {
     if (step === 6) { setGeneratedRoute(null); setGenError(null); setGenerating(false) }
-    setStep((s) => Math.max(s - 1, 1))
+    setStep((s) => Math.max(s - 1, 0))
   }
 
   async function useMyLocation() {
@@ -294,13 +295,34 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
   return (
     <div className="wizard-screen">
-      <div className="wiz-header">
-        {step > 1 && <button className="wiz-back" onClick={back}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg></button>}
-        <StepIndicator />
-      </div>
+      {step > 0 && (
+        <div className="wiz-header">
+          {step > 1 && <button className="wiz-back" onClick={back}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg></button>}
+          <StepIndicator />
+        </div>
+      )}
 
       <div className="wiz-body">
-        {seasonalEvent && (
+        {/* ── Step 0: Mode Selection ───────────────── */}
+        {step === 0 && (
+          <div className="wiz-step">
+            <h2 className="wiz-title">{t('wizard.modeTitle')}</h2>
+            <div className="wiz-mode-grid">
+              <button className="wiz-mode-card" onClick={() => { setMode('manual'); setStep(1) }}>
+                <span className="wiz-mode-icon">🗺</span>
+                <strong>{t('wizard.modeCustom')}</strong>
+                <p className="wiz-mode-desc">{t('wizard.modeCustomDesc')}</p>
+              </button>
+              <button className="wiz-mode-card" onClick={() => { setMode('surprise'); setStep(1) }}>
+                <span className="wiz-mode-icon">🎲</span>
+                <strong>{t('wizard.modeSurprise')}</strong>
+                <p className="wiz-mode-desc">{t('wizard.modeSurpriseDesc')}</p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step >= 1 && seasonalEvent && (
           <div className="seasonal-banner">
             <span>{seasonalEvent.emoji ?? '🎉'} <strong>{seasonalEvent.name}</strong> — {seasonalEvent.description}</span>
             <button className="seasonal-close" onClick={() => setSeasonalEvent(null)}>×</button>
