@@ -86,6 +86,11 @@ function AppShell() {
     if (activeHike) setHikeVisible(true)
   }
 
+  function clearActiveHike() {
+    setActiveHike(null)
+    setHikeVisible(false)
+  }
+
   async function handleFinishHike(result) {
     if (!result?.completed) {
       // User tapped "exit" — hide hike but KEEP it saved for resume
@@ -157,7 +162,7 @@ function AppShell() {
       )}
       <main className="app-main">
         {tab === 'wizard' && <RouteWizardScreen onRouteGenerated={handleStartRoute} />}
-        {tab === 'routes' && <RoutesScreen onStartRoute={handleStartRoute} activeHike={activeHike} onResumeHike={resumeHike} />}
+        {tab === 'routes' && <RoutesScreen onStartRoute={handleStartRoute} activeHike={activeHike} onResumeHike={resumeHike} onClearActiveHike={clearActiveHike} />}
         {tab === 'social' && <SocialScreen />}
         {tab === 'profile' && <ProfileScreen />}
       </main>

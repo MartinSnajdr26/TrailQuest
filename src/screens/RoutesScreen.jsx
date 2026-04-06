@@ -8,7 +8,7 @@ const ACTIVITY_ICONS = { hiking: '🥾', cycling: '🚴', mtb: '🚵', crosscoun
 function formatKm(km) { return km ? `${Number(km).toFixed(1)} km` : '—' }
 function formatDate(d) { return d ? new Date(d).toLocaleDateString() : '' }
 
-export default function RoutesScreen({ onStartRoute, activeHike, onResumeHike }) {
+export default function RoutesScreen({ onStartRoute, activeHike, onResumeHike, onClearActiveHike }) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const [tab, setTab] = useState('mine')
@@ -115,6 +115,9 @@ export default function RoutesScreen({ onStartRoute, activeHike, onResumeHike })
       if (error) throw error
 
       showToast(t('myRoutes.deleted'), 'ok')
+
+      // Clear saved hike if it references the deleted route
+      if (activeHike?.route?.id === routeId) onClearActiveHike?.()
     } catch (e) {
       console.warn('Delete route failed:', e)
       // Restore: re-fetch data
@@ -182,7 +185,7 @@ export default function RoutesScreen({ onStartRoute, activeHike, onResumeHike })
                 </div>
                 <div className="route-card-meta" onClick={() => onStartRoute?.(r)}>
                   <span>{formatKm(r.distance_km)}</span>
-                  {r.difficulty && <span className="route-card-tag">{r.difficulty}</span>}
+                  {r.elevation_gain_m > 0 && <span>↗ {r.elevation_gain_m} m</span>}
                   <span>{formatDate(r.created_at)}</span>
                 </div>
               </div>

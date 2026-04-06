@@ -260,8 +260,9 @@ export async function generateRoute({
   const { data: route, error: routeErr } = await supabase.from('routes').insert({
     name: routeName,
     description: `${challengePOIs.length} zastávek, ${routeKm.toFixed(1)} km`,
-    activity_type: activity ?? 'hiking', distance_km: routeKm, difficulty: difficulty ?? 'medium',
+    activity_type: activity ?? 'hiking', distance_km: routeKm,
     is_loop: isLoop, region: startName ?? '', elevation_gain_m: Math.round(routeResult.ascent ?? 0),
+    duration_sec: Math.round(routeResult.duration ?? 0),
     start_lat: startLat, start_lng: startLng, gpx_data: JSON.stringify(geometry), created_by: userId,
   }).select().single()
 

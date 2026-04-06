@@ -6,6 +6,8 @@ import { suggestPlace, generateRoute, searchPOIsPublic } from '../lib/routeGener
 import { haversineDistance } from '../lib/geo.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import ElevationProfile from '../components/ElevationProfile.jsx'
+import RouteStats, { formatDuration } from '../components/RouteStats.jsx'
 
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
 const TOTAL_STEPS = 6
@@ -96,12 +98,7 @@ function LocationInput({ value, onChange, onSelect, placeholder }) {
   )
 }
 
-function formatDuration(seconds) {
-  if (!seconds) return '—'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.round((seconds % 3600) / 60)
-  return h > 0 ? `${h}h ${m}min` : `${m} min`
-}
+// formatDuration imported from RouteStats
 
 // ── Main Wizard ──────────────────────────────────────────────
 
@@ -257,6 +254,9 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
       return next
     })
   }
+
+  // Auto-skip step 4 (difficulty removed)
+  useEffect(() => { if (step === 4) setStep(5) }, [step])
 
   // Seasonal event banner
   useEffect(() => {
@@ -578,20 +578,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
           </div>
         )}
 
-        {/* Step 4 */}
-        {step === 4 && (
-          <div className="wiz-step">
-            <h2 className="wiz-title">{t('wizard.step4Title')}</h2>
-            <div className="wiz-diff-list">
-              {(DIFFICULTY_OPTIONS[activity] ?? DIFFICULTY_OPTIONS.hiking).map((d) => (
-                <button key={d.id} className={`wiz-diff-btn ${difficulty === d.id ? 'selected' : ''}`} onClick={() => { setDifficulty(d.id); next() }}>
-                  <span className="wiz-diff-emoji">{d.emoji}</span>
-                  <div><div className="wiz-diff-label">{t(d.labelKey)}</div><div className="wiz-diff-desc">{t(d.descKey)}</div></div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Step 4 removed — skip handled by effect below */}
 
         {/* Step 5: Challenges + POI picker */}
         {step === 5 && (
@@ -675,12 +662,8 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
                 <div ref={mapContainer} className="wiz-preview-map" />
                 <p className="wiz-lock-hint">🔒 {t('wizard.lockHint')}</p>
 
-                <div className="wiz-route-stats">
-                  <span>📏 {(generatedRoute.routeLength / 1000).toFixed(1)} km</span>
-                  <span>⏱ {formatDuration(generatedRoute.routeDuration)}</span>
-                  {generatedRoute.route.elevation_gain_m > 0 && <span>↗ {generatedRoute.route.elevation_gain_m} m</span>}
-                  <span className={`wiz-diff-tag diff-${difficulty}`}>{difficulty}</span>
-                </div>
+                <RouteStats distanceKm={generatedRoute.routeLength / 1000} durationSec={generatedRoute.routeDuration} ascentM={generatedRoute.route.elevation_gain_m} />
+                <ElevationProfile geometry={generatedRoute.routeGeometry} />
 
                 <div className="wiz-challenge-list">
                   {generatedRoute.challenges.map((ch, i) => (
