@@ -197,6 +197,16 @@ export default {
       readyText: 'Create your first route and start your adventure.',
       start: 'Start adventure',
     },
+    about: {
+      title: 'About', tagline: 'Outdoor treasure hunt — discover, challenge, collect badges',
+      aboutTitle: 'About TrailQuest', aboutText: 'TrailQuest is an app for outdoor enthusiasts who want to enrich their trips with fun challenges, quizzes and treasure hunt elements.',
+      featuresTitle: 'Features',
+      feat1: 'Route generation through POIs', feat2: 'Quizzes, photo challenges and tasks',
+      feat3: 'Progressive map unlock', feat4: 'Badges and leaderboards',
+      feat5: 'Custom stop selection', feat6: 'Community — add places and challenges',
+      feat7: 'Friend challenges', feat8: 'Annual travel passport',
+      techTitle: 'Technology', contactTitle: 'Contact', emailUs: 'Email us',
+    },
     ob: {
       skip: 'Skip', continue: 'Continue',
       chooseLang: 'Choose language:', chooseTheme: 'Theme:',

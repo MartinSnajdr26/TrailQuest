@@ -26,7 +26,7 @@ function AppShell() {
   const { session, user, profile, needsUsername } = useAuth()
   const [tab, setTab] = useState('wizard')
   const [activeHike, setActiveHike] = useState(loadSavedHike)
-  const [hikeVisible, setHikeVisible] = useState(!!loadSavedHike())
+  const [hikeVisible, setHikeVisible] = useState(false) // start hidden, user must tap resume or start
   const [summary, setSummary] = useState(null)
   const [newBadges, setNewBadges] = useState(null)
   const [adminPending, setAdminPending] = useState(0)
@@ -42,19 +42,10 @@ function AppShell() {
     ]).then(([q, p]) => setAdminPending((q.count ?? 0) + (p.count ?? 0)))
   }, [profile?.is_admin])
 
-  // Persist active hike — save on every change, auto-save interval
+  // Persist to localStorage on every activeHike change
   useEffect(() => {
     if (activeHike) localStorage.setItem(HIKE_KEY, JSON.stringify(activeHike))
     else localStorage.removeItem(HIKE_KEY)
-  }, [activeHike])
-
-  // Auto-save every 30s
-  useEffect(() => {
-    if (!activeHike) return
-    const id = setInterval(() => {
-      localStorage.setItem(HIKE_KEY, JSON.stringify(activeHike))
-    }, 30000)
-    return () => clearInterval(id)
   }, [activeHike])
 
   const handleChallengeCompleted = useCallback((challengeId) => {
@@ -66,7 +57,6 @@ function AppShell() {
     })
   }, [])
 
-  // Save walked distance + paused time from ActiveHikeScreen
   const handleHikeStateUpdate = useCallback((patch) => {
     setActiveHike((prev) => prev ? { ...prev, ...patch } : prev)
   }, [])
@@ -88,21 +78,26 @@ function AppShell() {
       const { data: run } = await supabase.from('user_route_runs').insert({ user_id: user?.id, route_id: route.id, started_at: new Date().toISOString(), is_completed: false }).select('id').single()
       runId = run?.id ?? null
     } catch (e) { console.warn('Could not create route run:', e) }
-    const hike = { route, challenges, routeGeometry, runId, startedAt: new Date().toISOString(), completedChallengeIds: [], walkedKm: 0, totalPausedMs: 0 }
-    setActiveHike(hike)
+    setActiveHike({ route, challenges, routeGeometry, runId, startedAt: new Date().toISOString(), completedChallengeIds: [], walkedKm: 0, totalPausedMs: 0 })
     setHikeVisible(true)
   }
 
   function resumeHike() {
-    // activeHike already loaded from localStorage
     if (activeHike) setHikeVisible(true)
   }
 
   async function handleFinishHike(result) {
+    if (!result?.completed) {
+      // User tapped "exit" — hide hike but KEEP it saved for resume
+      setHikeVisible(false)
+      return
+    }
+
+    // Route completed — save to DB, clear state, show summary
     const route = activeHike?.route
     const runId = activeHike?.runId
     const hikeWeather = result?.weather
-    if (runId && result?.completed) {
+    if (runId) {
       const u = { completed_at: new Date().toISOString(), is_completed: true }
       if (hikeWeather) { u.weather_temp_c = hikeWeather.temp_c; u.weather_condition = hikeWeather.condition; u.weather_rain_mm = hikeWeather.rain_mm; u.weather_snow_cm = hikeWeather.snow_cm }
       supabase.from('user_route_runs').update(u).eq('id', runId).then(() => {})
@@ -110,7 +105,7 @@ function AppShell() {
     setActiveHike(null)
     setHikeVisible(false)
     let earned = [], isAmbassador = false
-    if (user && result?.completed) {
+    if (user) {
       try {
         const stats = await fetchUserStats(user.id)
         if (stats) earned = await checkAndAwardBadges(user.id, stats)
@@ -118,7 +113,7 @@ function AppShell() {
         isAmbassador = await checkAmbassadorBadge(route.id, user.id, runId)
       } catch (e) { console.warn('Badge check failed:', e) }
     }
-    if (result?.completed && route) {
+    if (route) {
       setSummary({ route, hikeResult: result, earnedBadges: earned, weather: hikeWeather, isAmbassador })
       if (earned.length > 0) setNewBadges(earned)
     }
@@ -140,12 +135,11 @@ function AppShell() {
   }
   if (summary) return <RouteSummary route={summary.route} hikeResult={summary.hikeResult} earnedBadges={summary.earnedBadges} weather={summary.weather} isAmbassador={summary.isAmbassador} onClose={() => setSummary(null)} />
 
-  // Keep ActiveHikeScreen mounted (hidden) so map doesn't get destroyed
-  // Show it on top when hikeVisible=true
   return (
     <div className="app-shell">
+      {/* ActiveHikeScreen: always mounted when hike exists, shown/hidden via z-index */}
       {activeHike && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: hikeVisible ? 50 : -1, opacity: hikeVisible ? 1 : 0, pointerEvents: hikeVisible ? 'auto' : 'none' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: hikeVisible ? 50 : -1, visibility: hikeVisible ? 'visible' : 'hidden' }}>
           <ActiveHikeScreen
             route={activeHike.route}
             challenges={activeHike.challenges}

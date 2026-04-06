@@ -20,12 +20,24 @@ export function haversineDistance([lng1, lat1], [lng2, lat2]) {
 export function extractRouteCoords(geometry) {
   if (!geometry) return null
   try {
-    const geo =
-      typeof geometry === 'string' ? JSON.parse(geometry) : geometry
-    if (geo.type === 'Feature') return geo.geometry?.coordinates ?? null
+    const geo = typeof geometry === 'string' ? JSON.parse(geometry) : geometry
+    // Direct LineString
     if (geo.type === 'LineString') return geo.coordinates ?? null
-    if (Array.isArray(geo) && geo.length > 0 && Array.isArray(geo[0]))
-      return geo
+    // Feature wrapping LineString
+    if (geo.type === 'Feature') return geo.geometry?.coordinates ?? null
+    // FeatureCollection — merge all LineStrings
+    if (geo.type === 'FeatureCollection' && Array.isArray(geo.features)) {
+      const all = []
+      for (const f of geo.features) {
+        const c = f.geometry?.coordinates ?? f.coordinates
+        if (Array.isArray(c)) all.push(...c)
+      }
+      return all.length > 0 ? all : null
+    }
+    // Mapy.com response: { geometry: { ... } }
+    if (geo.geometry) return extractRouteCoords(geo.geometry)
+    // Raw coordinate array
+    if (Array.isArray(geo) && geo.length > 0 && Array.isArray(geo[0])) return geo
     return null
   } catch {
     return null

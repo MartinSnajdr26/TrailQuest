@@ -10,6 +10,7 @@ import SubmitQuestionScreen from './SubmitQuestionScreen.jsx'
 import AddPOIScreen from './AddPOIScreen.jsx'
 import PassportScreen from './PassportScreen.jsx'
 import HelpScreen from './HelpScreen.jsx'
+import AboutScreen from './AboutScreen.jsx'
 import AdminScreen from './AdminScreen.jsx'
 
 const LANGUAGES = [
@@ -76,6 +77,7 @@ export default function ProfileScreen() {
   const [showAddPoi, setShowAddPoi] = useState(false)
   const [showPassport, setShowPassport] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
 
   useEffect(() => {
@@ -152,6 +154,7 @@ export default function ProfileScreen() {
   if (showAddPoi) return <AddPOIScreen onBack={() => setShowAddPoi(false)} />
   if (showPassport) return <PassportScreen onBack={() => setShowPassport(false)} />
   if (showHelp) return <HelpScreen onBack={() => setShowHelp(false)} />
+  if (showAbout) return <AboutScreen onBack={() => setShowAbout(false)} />
   if (showAdmin) return <AdminScreen onBack={() => setShowAdmin(false)} />
 
   return (
@@ -351,6 +354,7 @@ export default function ProfileScreen() {
 
         {/* Help & About */}
         <button className="btn-secondary" onClick={() => setShowHelp(true)}>❓ {t('help.title')}</button>
+        <button className="btn-secondary" onClick={() => setShowAbout(true)}>ℹ️ {t('about.title')}</button>
 
         {/* Theme toggle */}
         <div className="profile-lang">

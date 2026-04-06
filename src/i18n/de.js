@@ -197,6 +197,16 @@ export default {
       readyText: 'Erstelle deine erste Route und starte dein Abenteuer.',
       start: 'Abenteuer starten',
     },
+    about: {
+      title: 'Über die App', tagline: 'Outdoor-Schatzsuche — entdecke, löse Aufgaben, sammle Abzeichen',
+      aboutTitle: 'Über TrailQuest', aboutText: 'TrailQuest ist eine App für Outdoor-Fans, die ihre Ausflüge mit Aufgaben, Quiz und Schatzsuche bereichern möchten.',
+      featuresTitle: 'Funktionen',
+      feat1: 'Routengenerierung über POIs', feat2: 'Quiz, Foto-Aufgaben',
+      feat3: 'Schrittweise Kartenfreischaltung', feat4: 'Abzeichen und Ranglisten',
+      feat5: 'Eigene Stopp-Auswahl', feat6: 'Community — Orte und Aufgaben hinzufügen',
+      feat7: 'Freunde herausfordern', feat8: 'Jährlicher Reisepass',
+      techTitle: 'Technologie', contactTitle: 'Kontakt', emailUs: 'E-Mail senden',
+    },
     ob: {
       skip: 'Überspringen', continue: 'Weiter',
       chooseLang: 'Sprache wählen:', chooseTheme: 'Design:',

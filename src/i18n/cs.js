@@ -205,6 +205,16 @@ export default {
       readyText: 'Vytvoř svou první trasu a vydej se na dobrodružství.',
       start: 'Začít dobrodružství',
     },
+    about: {
+      title: 'O aplikaci', tagline: 'Outdoor treasure hunt — objevuj, plň výzvy, sbírej odznaky',
+      aboutTitle: 'O TrailQuest', aboutText: 'TrailQuest je aplikace pro outdoor nadšence, kteří chtějí obohatit výlety o zábavné výzvy, kvízy a treasure hunt elementy. Zavede tě do pivovarů, na hrady, rozhledny a skrytá místa.',
+      featuresTitle: 'Funkce',
+      feat1: 'Generování tras přes zajímavá místa', feat2: 'Kvízy, foto výzvy a úkoly',
+      feat3: 'Postupné odemykání mapy', feat4: 'Odznaky a žebříčky',
+      feat5: 'Vlastní výběr zastávek', feat6: 'Komunita — přidávej místa a výzvy',
+      feat7: 'Výzvy přátel', feat8: 'Roční cestovní pas',
+      techTitle: 'Technologie', contactTitle: 'Kontakt', emailUs: 'Napsat nám',
+    },
     ob: {
       skip: 'Přeskočit', continue: 'Pokračovat',
       chooseLang: 'Vyber jazyk:', chooseTheme: 'Vzhled:',
