@@ -341,40 +341,51 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     }
   }
 
-  // Step 6: Generate 3 variants in parallel
+  // Step 6: Generate 2 themed variants sequentially
   useEffect(() => {
     if (step !== 6 || variants.length > 0 || generating) return
     let cancelled = false
     async function run() {
       setGenerating(true); setGenError(null); setVariants([]); setActiveVariant(0)
-      setProgressMsg(t('wizard.progVariants'))
 
       const base = getGenParams()
 
-      // Generate 3 variants (different POI preferences rotations)
-      const prefs = base.poiPreferences ?? []
-      const configs = [
-        { ...base, onProgress: (s) => !cancelled && setProgressMsg(t(`wizard.prog${s === 'done' ? 'Done' : 'Planning'}`) + ' (A)') },
-        { ...base, poiPreferences: [...prefs.slice(1), prefs[0]].filter(Boolean), onProgress: () => {} },
-        { ...base, poiPreferences: [...prefs].reverse(), onProgress: () => {} },
-      ]
-
-      // For manual mode: A=user order, B=optimized, C=reversed
-      if (base.manualPOIs?.length > 1) {
-        configs[0].manualPOIs = base.manualPOIs
-        configs[1].manualPOIs = base.manualPOIs // optimizer will reorder
-        configs[2].manualPOIs = [...base.manualPOIs].reverse()
+      // For manual mode: just generate one route with user's POIs
+      if (base.manualPOIs?.length > 0) {
+        setProgressMsg(t('wizard.progPlanning'))
+        const result = await generateRoute({ ...base, dryRun: true }).catch(() => null)
+        if (!cancelled) {
+          if (result) setVariants([result])
+          else setGenError(t('error.generic'))
+          setGenerating(false)
+        }
+        return
       }
 
-      const results = await Promise.allSettled(configs.map((c) => generateRoute({ ...c, dryRun: true })))
+      // Auto mode: 2 themed variants
+      // Variant A — Food & Drink 🍺
+      setProgressMsg('🍺 ' + t('wizard.progFoodDrink'))
+      const varA = await generateRoute({
+        ...base, dryRun: true, poiPreferences: ['pubs', 'wine', 'huts'],
+        onProgress: (s) => { if (!cancelled && s !== 'done') setProgressMsg('🍺 ' + t('wizard.progFoodDrink')) },
+      }).catch((e) => { console.warn('Variant A failed:', e); return null })
+
       if (cancelled) return
+      const partialVariants = varA ? [varA] : []
+      setVariants([...partialVariants]) // show A immediately
 
-      const successful = results.filter((r) => r.status === 'fulfilled').map((r) => r.value).filter(Boolean)
-      if (successful.length === 0) {
-        setGenError(t('error.generic'))
-      } else {
-        setVariants(successful)
-      }
+      // Variant B — Culture & Nature 🏰
+      setProgressMsg('🏰 ' + t('wizard.progCultureNature'))
+      const usedNames = (varA?.challenges ?? []).map((c) => c.title).filter(Boolean)
+      const varB = await generateRoute({
+        ...base, dryRun: true, poiPreferences: ['landmarks', 'viewpoints', 'nature'],
+        onProgress: (s) => { if (!cancelled && s !== 'done') setProgressMsg('🏰 ' + t('wizard.progCultureNature')) },
+      }).catch((e) => { console.warn('Variant B failed:', e); return null })
+
+      if (cancelled) return
+      const all = [varA, varB].filter(Boolean)
+      if (all.length === 0) setGenError(t('error.generic'))
+      else setVariants(all)
       setGenerating(false)
     }
     run()
@@ -800,17 +811,23 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
             {variants.length > 0 && (
               <>
-                {/* Variant selector tabs */}
+                {/* Variant selector — 2 themed cards */}
                 {variants.length > 1 && (
-                  <div className="variant-tabs">
+                  <div className="variant-cards">
                     {variants.map((v, i) => {
                       const km = ((v.routeLength ?? 0) / 1000).toFixed(1)
-                      const icons = (v.challenges ?? []).slice(0, 3).map((c) => POI_ICONS[c.poi_type] ?? '📍').join('')
-                      const labels = mode === 'manual' ? [t('wizard.varOriginal'), t('wizard.varOptimized'), t('wizard.varReversed')] : ['A', 'B', 'C']
+                      const stopIcons = (v.challenges ?? []).slice(0, 4).map((c) => POI_ICONS[c.poi_type] ?? '📍').join(' ')
+                      const themes = [
+                        { emoji: '🍺', label: t('wizard.themeFoodDrink'), cls: 'variant-card--food' },
+                        { emoji: '🏰', label: t('wizard.themeCultureNature'), cls: 'variant-card--culture' },
+                      ]
+                      const theme = themes[i] ?? themes[0]
                       return (
-                        <button key={i} className={`variant-tab ${activeVariant === i ? 'active' : ''}`} onClick={() => setActiveVariant(i)}>
-                          <span className="variant-tab-label">{labels[i] ?? `${i + 1}`}</span>
-                          <span className="variant-tab-stats">{km} km {icons}</span>
+                        <button key={i} className={`variant-card ${theme.cls} ${activeVariant === i ? 'active' : ''}`} onClick={() => setActiveVariant(i)}>
+                          <span className="variant-card-emoji">{theme.emoji}</span>
+                          <span className="variant-card-label">{theme.label}</span>
+                          <span className="variant-card-stats">📏 {km} km · {(v.challenges ?? []).length} {t('wizard.stops5plus')}</span>
+                          <span className="variant-card-icons">{stopIcons}</span>
                         </button>
                       )
                     })}

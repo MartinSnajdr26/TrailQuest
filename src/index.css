@@ -2038,17 +2038,31 @@ h1, h2, h3 { font-weight: 600; font-family: 'Inter', system-ui, sans-serif; }
 .route-stats-row { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
 .route-stat { display: flex; align-items: center; gap: 2px; }
 
-/* ─── Variant tabs ──────────────────────────────────────────────────────── */
-.variant-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
-.variant-tab {
-  flex: 1; padding: 8px 6px; border-radius: 10px; text-align: center; cursor: pointer;
-  background: var(--surface); border: 2px solid var(--border); transition: all 0.15s;
-  display: flex; flex-direction: column; gap: 2px;
+/* ─── Variant cards (2 themed) ───────────────────────────────────────────── */
+.variant-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.variant-card {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 14px 8px; border-radius: var(--shape-lg); text-align: center; cursor: pointer;
+  background: var(--md-surface-container); border: 2px solid transparent;
+  transition: all var(--dur-short) var(--motion);
 }
-.variant-tab.active { border-color: var(--accent); background: var(--accent-dim); }
-.variant-tab-label { font-size: 12px; font-weight: 700; }
-.variant-tab-stats { font-size: 11px; color: var(--text-muted); }
-.variant-tab.active .variant-tab-stats { color: var(--accent); }
+.variant-card-emoji { font-size: 32px; }
+.variant-card-label { font-size: 13px; font-weight: 600; }
+.variant-card-stats { font-size: 11px; color: var(--md-on-surface-variant); }
+.variant-card-icons { font-size: 14px; letter-spacing: 2px; }
+
+/* Food & drink theme — amber */
+.variant-card--food.active {
+  background: var(--md-tertiary-container, rgba(246,200,103,0.15));
+  border-color: var(--md-tertiary, #F6C867);
+  color: var(--md-on-tertiary-container, #FFE08A);
+}
+/* Culture & nature theme — green */
+.variant-card--culture.active {
+  background: var(--md-secondary-container);
+  border-color: var(--md-secondary, #A8D5B5);
+  color: var(--md-on-secondary-container);
+}
 
 /* Regen overlay */
 .wiz-regen-overlay {
