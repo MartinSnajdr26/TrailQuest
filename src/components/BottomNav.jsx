@@ -44,7 +44,7 @@ const tabs = [
   },
 ]
 
-export default function BottomNav({ active, onChange }) {
+export default function BottomNav({ active, onChange, adminPending }) {
   const { t } = useTranslation()
 
   return (
@@ -55,7 +55,12 @@ export default function BottomNav({ active, onChange }) {
           className={`bottom-nav-tab ${active === tab.id ? 'active' : ''}`}
           onClick={() => onChange(tab.id)}
         >
-          <span className="bottom-nav-icon">{tab.icon}</span>
+          <span className="bottom-nav-icon">
+            {tab.icon}
+            {tab.id === 'profile' && adminPending > 0 && (
+              <span className="nav-badge-dot" />
+            )}
+          </span>
           <span className="bottom-nav-label">{t(tab.labelKey)}</span>
         </button>
       ))}

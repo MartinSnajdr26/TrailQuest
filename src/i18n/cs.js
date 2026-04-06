@@ -64,6 +64,7 @@ export default {
       deleteDesc: 'Tato akce je nevratná. Trasa a všechny výzvy budou smazány.',
       deleteCancel: 'Zrušit', deleteConfirm: 'Smazat',
       deleted: 'Trasa smazána', deleteFailed: 'Nepodařilo se smazat trasu',
+      resumeTitle: 'Máš rozdělanou trasu', resumeBtn: 'Pokračovat',
     },
     activity: {
       hiking: 'Turistika', cycling: 'Cyklistika', mtb: 'MTB',
@@ -182,6 +183,20 @@ export default {
       noPending: 'Žádné čekající výzvy', noPendingPoi: 'Žádná čekající místa', noApproved: 'Žádné schválené výzvy',
       approve: 'Schválit', reject: 'Zamítnout', edit: 'Upravit', saveApprove: 'Uložit a schválit',
       partners: 'Partneři', visits: 'Návštěvy', discount: 'Sleva', removePartner: 'Zrušit partnerství', noPartners: 'Žádní partneři',
+      pendingLabel: 'Čekající schválení', questions: 'otázek', places: 'míst',
+    },
+    welcome: {
+      skip: 'Přeskočit', title: 'Vítej v TrailQuest!',
+      intro: 'Outdoor treasure hunt — objevuj zajímavá místa, plň výzvy a sbírej odznaky.',
+      howTitle: 'Jak to funguje?',
+      step1: 'Nastav trasu — aktivita, vzdálenost, zastávky',
+      step2: 'Aplikace najde hospody, hrady a vyhlídky po cestě',
+      step3: 'Odemykej mapu plněním výzev a kvízů',
+      step4: 'Sbírej odznaky a soutěž s přáteli',
+      settingsTitle: 'Přizpůsob si aplikaci',
+      readyTitle: 'Vše připraveno!',
+      readyText: 'Vytvoř svou první trasu a vydej se na dobrodružství.',
+      start: 'Začít dobrodružství',
     },
     error: {
       generic: 'Nastala chyba. Zkuste to znovu.',

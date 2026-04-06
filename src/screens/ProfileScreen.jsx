@@ -22,6 +22,29 @@ function getInitials(username) {
   return username.slice(0, 2).toUpperCase()
 }
 
+function AdminCard({ onOpen }) {
+  const { t } = useTranslation()
+  const [qCount, setQCount] = useState(0)
+  const [pCount, setPCount] = useState(0)
+  useEffect(() => {
+    Promise.all([
+      supabase.from('poi_questions').select('id', { count: 'exact', head: true }).eq('is_approved', false),
+      supabase.from('custom_pois').select('id', { count: 'exact', head: true }).eq('is_approved', false),
+    ]).then(([q, p]) => { setQCount(q.count ?? 0); setPCount(p.count ?? 0) })
+  }, [])
+  return (
+    <div className="admin-card-profile" onClick={onOpen}>
+      <div className="admin-card-profile-header">
+        <span>⚙️ {t('admin.title')}</span>
+        <span className="admin-card-arrow">→</span>
+      </div>
+      <div className="admin-card-profile-meta">
+        {t('admin.pendingLabel')}: {qCount} {t('admin.questions')}, {pCount} {t('admin.places')}
+      </div>
+    </div>
+  )
+}
+
 export default function ProfileScreen() {
   const { t, i18n } = useTranslation()
   const { user, profile, signOut, saveUsername } = useAuth()
@@ -318,11 +341,9 @@ export default function ProfileScreen() {
           )}
         </div>
 
-        {/* Admin button — only if user has is_admin flag */}
+        {/* Admin panel — only if user has is_admin flag */}
         {profile?.is_admin && (
-          <button className="btn-secondary" onClick={() => setShowAdmin(true)}>
-            ⚙️ {t('admin.title')}
-          </button>
+          <AdminCard onOpen={() => setShowAdmin(true)} />
         )}
 
         {/* Theme toggle */}

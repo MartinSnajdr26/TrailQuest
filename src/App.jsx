@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx'
 import { supabase } from './lib/supabase.js'
 import { fetchUserStats } from './lib/stats.js'
@@ -14,20 +14,68 @@ import ActiveHikeScreen from './screens/ActiveHikeScreen.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import RouteSummary from './components/RouteSummary.jsx'
 import BadgeCelebration from './components/BadgeCelebration.jsx'
+import WelcomeScreen from './screens/WelcomeScreen.jsx'
+
+const HIKE_KEY = 'tq_active_hike'
+
+function loadSavedHike() {
+  try {
+    const saved = localStorage.getItem(HIKE_KEY)
+    return saved ? JSON.parse(saved) : null
+  } catch {
+    return null
+  }
+}
 
 function AppShell() {
   const { session, user, profile, needsUsername } = useAuth()
   const [tab, setTab] = useState('wizard')
-  const [activeHike, setActiveHike] = useState(null)
+  const [activeHike, setActiveHike] = useState(loadSavedHike)
   const [summary, setSummary] = useState(null)
   const [newBadges, setNewBadges] = useState(null)
+  const [onboarded, setOnboarded] = useState(() => localStorage.getItem('tq_onboarding') === 'done')
+  const [adminPending, setAdminPending] = useState(0)
 
-  // Called when wizard generates a route, or user starts an existing route
+  // Fetch admin pending counts
+  useEffect(() => {
+    if (!profile?.is_admin) return
+    async function fetchPending() {
+      const [q, p] = await Promise.all([
+        supabase.from('poi_questions').select('id', { count: 'exact', head: true }).eq('is_approved', false),
+        supabase.from('custom_pois').select('id', { count: 'exact', head: true }).eq('is_approved', false),
+      ])
+      setAdminPending((q.count ?? 0) + (p.count ?? 0))
+    }
+    fetchPending()
+  }, [profile?.is_admin])
+
+  // ── Persist active hike to localStorage ────────────────────
+
+  useEffect(() => {
+    if (activeHike) {
+      localStorage.setItem(HIKE_KEY, JSON.stringify(activeHike))
+    } else {
+      localStorage.removeItem(HIKE_KEY)
+    }
+  }, [activeHike])
+
+  // ── Called when challenge is completed inside ActiveHikeScreen ──
+
+  const handleChallengeCompleted = useCallback((challengeId) => {
+    setActiveHike((prev) => {
+      if (!prev) return prev
+      const completed = [...(prev.completedChallengeIds ?? [])]
+      if (!completed.includes(challengeId)) completed.push(challengeId)
+      return { ...prev, completedChallengeIds: completed }
+    })
+  }, [])
+
+  // ── Start a route (from wizard or routes list) ─────────────
+
   async function handleStartRoute(routeOrGenerated) {
     let route, challenges, routeGeometry
 
     if (routeOrGenerated.routeGeometry) {
-      // From wizard
       route = routeOrGenerated.route
       challenges = routeOrGenerated.challenges.map((ch, i) => ({
         ...ch,
@@ -36,7 +84,6 @@ function AppShell() {
       }))
       routeGeometry = routeOrGenerated.routeGeometry
     } else {
-      // From routes list — load challenges
       route = routeOrGenerated
       const { data } = await supabase
         .from('challenges')
@@ -70,14 +117,23 @@ function AppShell() {
       routeGeometry,
       runId,
       startedAt: new Date().toISOString(),
+      completedChallengeIds: [],
     })
   }
+
+  // ── Resume a saved hike (from RoutesScreen banner) ─────────
+
+  function handleResumeHike() {
+    // activeHike is already loaded from localStorage — just switch to it
+    // (it's shown automatically because activeHike is truthy)
+  }
+
+  // ── Finish hike ────────────────────────────────────────────
 
   async function handleFinishHike(result) {
     const route = activeHike?.route
     const runId = activeHike?.runId
 
-    // Save weather data to run
     const hikeWeather = result?.weather
     if (runId && result?.completed) {
       const updateData = { completed_at: new Date().toISOString(), is_completed: true }
@@ -90,6 +146,7 @@ function AppShell() {
       supabase.from('user_route_runs').update(updateData).eq('id', runId).then(() => {})
     }
 
+    // Clear persisted state
     setActiveHike(null)
 
     let earned = []
@@ -120,6 +177,9 @@ function AppShell() {
   if (profile === undefined) return <div className="splash" />
   if (needsUsername()) return <UsernameSetup />
 
+  // Onboarding — show once after first login
+  if (!onboarded) return <WelcomeScreen onComplete={() => setOnboarded(true)} />
+
   // Overlays
   if (newBadges?.length > 0) {
     return (
@@ -140,6 +200,8 @@ function AppShell() {
         routeGeometry={activeHike.routeGeometry}
         runId={activeHike.runId}
         startedAt={activeHike.startedAt}
+        completedChallengeIds={activeHike.completedChallengeIds}
+        onChallengeCompleted={handleChallengeCompleted}
         onFinish={handleFinishHike}
       />
     )
@@ -149,11 +211,11 @@ function AppShell() {
     <div className="app-shell">
       <main className="app-main">
         {tab === 'wizard' && <RouteWizardScreen onRouteGenerated={handleStartRoute} />}
-        {tab === 'routes' && <RoutesScreen onStartRoute={handleStartRoute} />}
+        {tab === 'routes' && <RoutesScreen onStartRoute={handleStartRoute} activeHike={activeHike} onResumeHike={handleResumeHike} />}
         {tab === 'social' && <SocialScreen />}
         {tab === 'profile' && <ProfileScreen />}
       </main>
-      <BottomNav active={tab} onChange={setTab} />
+      <BottomNav active={tab} onChange={setTab} adminPending={adminPending} />
     </div>
   )
 }

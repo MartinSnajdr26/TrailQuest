@@ -64,6 +64,7 @@ export default {
       deleteDesc: 'This action is irreversible. The route and all challenges will be deleted.',
       deleteCancel: 'Cancel', deleteConfirm: 'Delete',
       deleted: 'Route deleted', deleteFailed: 'Failed to delete route',
+      resumeTitle: 'Active route', resumeBtn: 'Continue',
     },
     activity: {
       hiking: 'Hiking', cycling: 'Cycling', mtb: 'MTB',
@@ -174,6 +175,20 @@ export default {
       noPending: 'No pending challenges', noPendingPoi: 'No pending places', noApproved: 'No approved challenges',
       approve: 'Approve', reject: 'Reject', edit: 'Edit', saveApprove: 'Save & approve',
       partners: 'Partners', visits: 'Visits', discount: 'Discount', removePartner: 'Remove partner', noPartners: 'No partners',
+      pendingLabel: 'Pending approval', questions: 'questions', places: 'places',
+    },
+    welcome: {
+      skip: 'Skip', title: 'Welcome to TrailQuest!',
+      intro: 'Outdoor treasure hunt — discover interesting places, complete challenges and collect badges.',
+      howTitle: 'How does it work?',
+      step1: 'Set up a route — activity, distance, stops',
+      step2: 'The app finds pubs, castles and viewpoints along the way',
+      step3: 'Unlock the map by completing challenges and quizzes',
+      step4: 'Collect badges and compete with friends',
+      settingsTitle: 'Customize your app',
+      readyTitle: 'All set!',
+      readyText: 'Create your first route and start your adventure.',
+      start: 'Start adventure',
     },
     error: {
       generic: 'An error occurred. Please try again.',

@@ -107,29 +107,32 @@ const S_MAP_BTN = {
 
 // ─────────────────────────────────────────────────────────────────────────
 
-export default function ActiveHikeScreen({ route, challenges, routeGeometry, runId, startedAt, onFinish }) {
+export default function ActiveHikeScreen({ route, challenges, routeGeometry, runId, startedAt, completedChallengeIds, onChallengeCompleted, onFinish }) {
   const { user } = useAuth()
   const { t } = useTranslation()
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
   const [mapReady, setMapReady] = useState(false)
 
-  const completedIdsRef = useRef(new Set())
-  const triggeredIdsRef = useRef(new Set())
-  const [completedCount, setCompletedCount] = useState(0)
+  // Restore previously completed challenges from persisted state
+  const restoredIds = completedChallengeIds ?? []
+  const completedIdsRef = useRef(new Set(restoredIds))
+  const triggeredIdsRef = useRef(new Set(restoredIds))
+  const [completedCount, setCompletedCount] = useState(restoredIds.length)
   const unlockedCount = completedCount + 1
 
   const [activeChallenge, setActiveChallenge] = useState(null)
   const [nextDist, setNextDist] = useState(null)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
 
-  // HUD state
-  const [elapsed, setElapsed] = useState(0)
+  // HUD state — restore elapsed from startedAt
+  const initialElapsed = startedAt ? Math.max(0, Date.now() - new Date(startedAt).getTime()) : 0
+  const [elapsed, setElapsed] = useState(initialElapsed)
   const [walkedKm, setWalkedKm] = useState(0)
   const prevPosRef = useRef(null)
-  const startTimeRef = useRef(Date.now())
+  const startTimeRef = useRef(startedAt ? new Date(startedAt).getTime() : Date.now())
   const [paused, setPaused] = useState(false)
-  const pausedAtRef = useRef(0) // ms of elapsed when paused
+  const pausedAtRef = useRef(0)
   const [hudCollapsed, setHudCollapsed] = useState(false)
 
   const markerEls = useRef(new Map())
@@ -202,21 +205,31 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
       const srcId = `hike-seg-${i}`, layId = `hike-seg-${i}-line`
       if (map.getSource(srcId)) return
       map.addSource(srcId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: seg } } })
-      map.addLayer({ id: layId, type: 'line', source: srcId, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: i === 0 ? UNLOCKED_PAINT : LOCKED_PAINT })
+      // Show already-unlocked segments (restored from persisted state)
+      const isUnlocked = i < unlockedCount
+      map.addLayer({ id: layId, type: 'line', source: srcId, layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: isUnlocked ? UNLOCKED_PAINT : LOCKED_PAINT })
     })
     sortedChallenges.forEach((ch, i) => {
       if (ch.lat == null || ch.lng == null) return
       const el = document.createElement('div')
-      el.className = i === 0 ? 'ch-marker ch-marker--next' : 'ch-marker ch-marker--locked'
-      el.innerHTML = i === 0 ? `<span class="ch-marker-num">${i + 1}</span>` : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
+      const chKey = ch.id ?? `ch-${i}`
+      const isDone = completedIdsRef.current.has(chKey)
+      const isNext = !isDone && i === completedIdsRef.current.size
+      el.className = isDone ? 'ch-marker ch-marker--done' : isNext ? 'ch-marker ch-marker--next' : 'ch-marker ch-marker--locked'
+      el.innerHTML = isDone
+        ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+        : isNext ? `<span class="ch-marker-num">${i + 1}</span>`
+        : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
       new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([Number(ch.lng), Number(ch.lat)]).addTo(map)
       markerEls.current.set(ch.id ?? `ch-${i}`, el)
     })
-    if (segments[0]) fitSegment(map, segments[0])
+    // Fit to latest unlocked segment
+    const fitIdx = Math.min(unlockedCount - 1, segments.length - 1)
+    if (segments[fitIdx]) fitSegment(map, segments[fitIdx])
   }, [mapReady, segments, sortedChallenges])
 
   // Animate newly unlocked segment
-  const prevUnlockedRef = useRef(1)
+  const prevUnlockedRef = useRef(restoredIds.length + 1)
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || unlockedCount <= prevUnlockedRef.current) return
@@ -269,6 +282,8 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
   async function handleChallengeComplete(challenge, answer) {
     const key = challenge.id ?? `ch-${sortedChallenges.indexOf(challenge)}`
     completedIdsRef.current.add(key); setActiveChallenge(null); setCompletedCount((p) => p + 1)
+    // Persist progress to parent (→ localStorage)
+    onChallengeCompleted?.(key)
     const funFact = challenge.content_json?.fun_fact ?? challenge.fun_fact
     audioGuide.speak(funFact ? `Výborně! ${funFact}` : 'Výzva splněna.')
     if (challenge.content_json?.custom_poi_id) recordPOIVisit(challenge.content_json.custom_poi_id)

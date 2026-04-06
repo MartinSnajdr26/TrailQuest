@@ -8,7 +8,7 @@ const ACTIVITY_ICONS = { hiking: '🥾', cycling: '🚴', mtb: '🚵', crosscoun
 function formatKm(km) { return km ? `${Number(km).toFixed(1)} km` : '—' }
 function formatDate(d) { return d ? new Date(d).toLocaleDateString() : '' }
 
-export default function RoutesScreen({ onStartRoute }) {
+export default function RoutesScreen({ onStartRoute, activeHike, onResumeHike }) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const [tab, setTab] = useState('mine')
@@ -137,6 +137,22 @@ export default function RoutesScreen({ onStartRoute }) {
           </button>
         </div>
       </div>
+
+      {/* Active hike resume banner */}
+      {activeHike && (
+        <div className="resume-banner" onClick={onResumeHike}>
+          <div className="resume-banner-text">
+            <span className="resume-banner-icon">▶</span>
+            <div>
+              <div className="resume-banner-title">{t('myRoutes.resumeTitle')}: {activeHike.route?.name}</div>
+              <div className="resume-banner-meta">
+                {t('hike.challenge')} {(activeHike.completedChallengeIds?.length ?? 0)}/{activeHike.challenges?.length ?? 0}
+              </div>
+            </div>
+          </div>
+          <span className="resume-banner-arrow">→</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="loading-state">{t('profile.loading')}</div>
