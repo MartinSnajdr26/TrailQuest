@@ -1980,3 +1980,61 @@ h1, h2, h3 { font-weight: 600; }
 /* ─── Route stats row ───────────────────────────────────────────────────── */
 .route-stats-row { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
 .route-stat { display: flex; align-items: center; gap: 2px; }
+
+/* ─── Variant tabs ──────────────────────────────────────────────────────── */
+.variant-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.variant-tab {
+  flex: 1; padding: 8px 6px; border-radius: 10px; text-align: center; cursor: pointer;
+  background: var(--surface); border: 2px solid var(--border); transition: all 0.15s;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.variant-tab.active { border-color: var(--accent); background: var(--accent-dim); }
+.variant-tab-label { font-size: 12px; font-weight: 700; }
+.variant-tab-stats { font-size: 11px; color: var(--text-muted); }
+.variant-tab.active .variant-tab-stats { color: var(--accent); }
+
+/* Regen overlay */
+.wiz-regen-overlay {
+  position: absolute; inset: 0; z-index: 5;
+  background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+}
+
+/* ─── Editable stop row ─────────────────────────────────────────────────── */
+.wiz-stop-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 8px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; margin-bottom: 4px;
+}
+.wiz-stop-move {
+  width: 24px; height: 24px; border-radius: 4px; font-size: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;
+}
+.wiz-stop-move:disabled { opacity: 0.25; }
+.wiz-stop-edit {
+  margin-left: auto; width: 28px; height: 28px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  font-size: 14px; flex-shrink: 0; background: none; border: none;
+}
+
+/* ─── Stop editor sheet ─────────────────────────────────────────────────── */
+.stop-editor-overlay {
+  position: fixed; inset: 0; z-index: 30;
+  background: rgba(0,0,0,0.5); display: flex; flex-direction: column; justify-content: flex-end;
+}
+.stop-editor {
+  background: var(--surface); border-radius: 20px 20px 0 0;
+  padding: 12px 20px 32px; max-height: 70vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.stop-editor-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; align-self: center; }
+.stop-editor-title { font-size: 16px; font-weight: 600; }
+.stop-editor-current { font-size: 13px; color: var(--text-muted); }
+.stop-alt-list { display: flex; flex-direction: column; gap: 4px; max-height: 250px; overflow-y: auto; }
+.stop-alt-row {
+  width: 100%; text-align: left; padding: 10px 12px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  font-size: 14px; cursor: pointer; transition: border-color 0.15s;
+}
+.stop-alt-row:hover { border-color: var(--accent); }

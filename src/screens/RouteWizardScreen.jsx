@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { suggestPlace, generateRoute, searchPOIsPublic } from '../lib/routeGenerator.js'
+import { suggestPlace, generateRoute, searchPOIsPublic, getCategoryEmoji } from '../lib/routeGenerator.js'
 import { haversineDistance } from '../lib/geo.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -135,18 +135,27 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   const [userLng, setUserLng] = useState(null)
   const manualDebounceRef = useRef(null)
 
-  // Step 6 state
+  // Step 6 state — 3 variants
   const [generating, setGenerating] = useState(false)
   const [progressMsg, setProgressMsg] = useState('')
-  const [generatedRoute, setGeneratedRoute] = useState(null)
+  const [variants, setVariants] = useState([]) // up to 3 generated routes
+  const [activeVariant, setActiveVariant] = useState(0)
   const [genError, setGenError] = useState(null)
+  const generatedRoute = variants[activeVariant] ?? null
+
+  // Stop editor
+  const [editingStopIdx, setEditingStopIdx] = useState(null)
+  const [stopAlternatives, setStopAlternatives] = useState([])
+  const [stopSearchQuery, setStopSearchQuery] = useState('')
+  const [stopSearching, setStopSearching] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
 
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
 
   function next() { setStep((s) => Math.min(s + 1, TOTAL_STEPS)) }
   function back() {
-    if (step === 6) { setGeneratedRoute(null); setGenError(null); setGenerating(false) }
+    if (step === 6) { setVariants([]); setGenError(null); setGenerating(false) }
     setStep((s) => Math.max(s - 1, 0))
   }
 
@@ -295,40 +304,127 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     setFetchedPOIs(null) // triggers the fetch effect above
   }, [poiPrefs.join(',')])
 
-  // Step 6: Generate route
+  // Build generation params (reusable for regeneration)
+  function getGenParams(poiOverride) {
+    const pois = poiOverride ?? (mode === 'manual' && manualSelected.length > 0
+      ? manualSelected
+      : (fetchedPOIs && selectedPOIIds.size > 0 ? [...selectedPOIIds].map((i) => fetchedPOIs[i]).filter(Boolean) : undefined))
+    return {
+      activity: activity ?? 'hiking',
+      startLat: startLocation?.lat ?? (manualSelected[0]?.lat ?? userLat ?? 50.08),
+      startLng: startLocation?.lng ?? (manualSelected[0]?.lng ?? userLng ?? 14.42),
+      startName: startLocation?.name ?? manualSelected[0]?.name ?? 'Start',
+      endLat: isLoop ? undefined : endLocation?.lat,
+      endLng: isLoop ? undefined : endLocation?.lng,
+      isLoop, distanceKm: distanceKm ?? 10,
+      challengeCount: pois?.length ?? challengeCount, challengeTypes, poiPreferences: poiPrefs,
+      userId: user?.id, manualPOIs: pois,
+    }
+  }
+
+  // Step 6: Generate 3 variants in parallel
   useEffect(() => {
-    if (step !== 6 || generatedRoute || generating) return
+    if (step !== 6 || variants.length > 0 || generating) return
     let cancelled = false
     async function run() {
-      setGenerating(true); setGenError(null)
-      try {
-        // Manual mode: use user-selected POIs directly
-        const pois = mode === 'manual' && manualSelected.length > 0
-          ? manualSelected
-          : (fetchedPOIs && selectedPOIIds.size > 0 ? [...selectedPOIIds].map((i) => fetchedPOIs[i]).filter(Boolean) : undefined)
-        const sLat = startLocation?.lat ?? (manualSelected[0]?.lat ?? userLat ?? 50.08)
-        const sLng = startLocation?.lng ?? (manualSelected[0]?.lng ?? userLng ?? 14.42)
-        const sName = startLocation?.name ?? manualSelected[0]?.name ?? 'Start'
-        const result = await generateRoute({
-          activity: activity ?? 'hiking',
-          startLat: sLat, startLng: sLng, startName: sName,
-          endLat: isLoop ? sLat : (endLocation?.lat ?? sLat), endLng: isLoop ? sLng : (endLocation?.lng ?? sLng),
-          isLoop, distanceKm: distanceKm ?? 10, difficulty: difficulty ?? 'medium',
-          challengeCount: pois?.length ?? challengeCount, challengeTypes, poiPreferences: poiPrefs,
-          userId: user?.id, manualPOIs: pois,
-          onProgress: (stage) => {
-            if (cancelled) return
-            const msgs = { searching: t('wizard.progSearching'), planning: t('wizard.progPlanning'), challenges: t('wizard.progChallenges'), saving: t('wizard.progSaving'), done: t('wizard.progDone') }
-            setProgressMsg(msgs[stage] ?? '')
-          },
-        })
-        if (!cancelled) setGeneratedRoute(result)
-      } catch (e) { if (!cancelled) setGenError(e.message) }
-      if (!cancelled) setGenerating(false)
+      setGenerating(true); setGenError(null); setVariants([]); setActiveVariant(0)
+      setProgressMsg(t('wizard.progVariants'))
+
+      const base = getGenParams()
+
+      // Generate 3 variants (different POI preferences rotations)
+      const prefs = base.poiPreferences ?? []
+      const configs = [
+        { ...base, onProgress: (s) => !cancelled && setProgressMsg(t(`wizard.prog${s === 'done' ? 'Done' : 'Planning'}`) + ' (A)') },
+        { ...base, poiPreferences: [...prefs.slice(1), prefs[0]].filter(Boolean), onProgress: () => {} },
+        { ...base, poiPreferences: [...prefs].reverse(), onProgress: () => {} },
+      ]
+
+      // For manual mode: A=user order, B=optimized, C=reversed
+      if (base.manualPOIs?.length > 1) {
+        configs[0].manualPOIs = base.manualPOIs
+        configs[1].manualPOIs = base.manualPOIs // optimizer will reorder
+        configs[2].manualPOIs = [...base.manualPOIs].reverse()
+      }
+
+      const results = await Promise.allSettled(configs.map((c) => generateRoute(c)))
+      if (cancelled) return
+
+      const successful = results.filter((r) => r.status === 'fulfilled').map((r) => r.value).filter(Boolean)
+      if (successful.length === 0) {
+        setGenError(t('error.generic'))
+      } else {
+        setVariants(successful)
+      }
+      setGenerating(false)
     }
     run()
     return () => { cancelled = true }
   }, [step])
+
+  // ── Stop editor functions ──────────────────────────────────
+
+  async function openStopEditor(idx) {
+    setEditingStopIdx(idx); setStopSearchQuery(''); setStopAlternatives([])
+    setStopSearching(true)
+    const ch = generatedRoute?.challenges?.[idx]
+    if (!ch) return
+    // Load nearby alternatives from DB
+    const { data } = await supabase.from('custom_pois').select('*').eq('is_approved', true).eq('is_active', true)
+      .gte('gps_lat', ch.lat - 0.08).lte('gps_lat', ch.lat + 0.08)
+      .gte('gps_lng', ch.lng - 0.08).lte('gps_lng', ch.lng + 0.08)
+      .order('quality_score', { ascending: false }).limit(8)
+    setStopAlternatives((data ?? []).filter((p) => p.id !== ch.id?.replace?.('gen-', '')).map((p) => ({
+      id: p.id, name: p.name, lat: p.gps_lat, lng: p.gps_lng, category: p.poi_category, quality: p.quality_score,
+    })))
+    setStopSearching(false)
+  }
+
+  async function searchStopAlternatives(query) {
+    if (query.length < 2) return
+    setStopSearching(true)
+    const items = await suggestPlace(query, startLocation?.lat, startLocation?.lng)
+    setStopAlternatives(items.slice(0, 6).map((p) => ({ id: `mapy_${p.name}`, name: p.name, lat: p.lat, lng: p.lng, category: 'other', quality: 5 })))
+    setStopSearching(false)
+  }
+
+  async function swapStop(newPoi) {
+    if (editingStopIdx == null || !generatedRoute) return
+    setRegenerating(true)
+    const newChallenges = [...generatedRoute.challenges]
+    newChallenges[editingStopIdx] = { ...newChallenges[editingStopIdx], title: newPoi.name, lat: newPoi.lat, lng: newPoi.lng, poi_type: newPoi.category }
+    // Regenerate route with new waypoints
+    try {
+      const pois = newChallenges.map((c) => ({ name: c.title, lat: c.lat, lng: c.lng, poiType: c.poi_type }))
+      const result = await generateRoute({ ...getGenParams(pois) })
+      setVariants((prev) => { const next = [...prev]; next[activeVariant] = result; return next })
+    } catch (e) { console.warn('Regen failed:', e) }
+    setEditingStopIdx(null); setRegenerating(false)
+  }
+
+  async function reorderStop(fromIdx, dir) {
+    if (!generatedRoute) return
+    const challenges = [...generatedRoute.challenges]
+    const toIdx = fromIdx + dir
+    if (toIdx < 0 || toIdx >= challenges.length) return
+    ;[challenges[fromIdx], challenges[toIdx]] = [challenges[toIdx], challenges[fromIdx]]
+    setRegenerating(true)
+    try {
+      const pois = challenges.map((c) => ({ name: c.title, lat: c.lat, lng: c.lng, poiType: c.poi_type }))
+      const result = await generateRoute({ ...getGenParams(pois) })
+      setVariants((prev) => { const next = [...prev]; next[activeVariant] = result; return next })
+    } catch (e) { console.warn('Reorder regen failed:', e) }
+    setRegenerating(false)
+  }
+
+  async function refreshAllStops() {
+    setRegenerating(true); setVariants([]); setActiveVariant(0)
+    try {
+      const result = await generateRoute({ ...getGenParams(undefined), onProgress: (s) => setProgressMsg(s) })
+      setVariants([result])
+    } catch (e) { setGenError(e.message) }
+    setRegenerating(false)
+  }
 
   // Step 6: Preview map — show ONLY first segment + grayed markers
   useEffect(() => {
@@ -649,40 +745,90 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
           </div>
         )}
 
-        {/* Step 6: Preview */}
+        {/* Step 6: Preview with variants */}
         {step === 6 && (
           <div className="wiz-step wiz-step-preview">
             {generating && <div className="wiz-loading"><div className="wiz-loading-spinner" /><p className="wiz-loading-msg">{progressMsg}</p></div>}
-            {genError && <div className="wiz-error"><p>{genError}</p><button className="btn-primary" onClick={() => { setGenError(null); setGenerating(false); setGeneratedRoute(null) }}>{t('wizard.retry')}</button></div>}
-            {generatedRoute && (
+            {genError && !generating && <div className="wiz-error"><p>{genError}</p><button className="btn-primary" onClick={() => { setGenError(null); setVariants([]); setGenerating(false) }}>{t('wizard.retry')}</button></div>}
+
+            {variants.length > 0 && (
               <>
-                <div className="wiz-preview-mode-label">
-                  {mode === 'manual' ? `🗺 ${t('wizard.manualRouteLabel')}` : `🎲 ${t('wizard.autoRouteLabel')}`}
-                </div>
+                {/* Variant selector tabs */}
+                {variants.length > 1 && (
+                  <div className="variant-tabs">
+                    {variants.map((v, i) => {
+                      const km = ((v.routeLength ?? 0) / 1000).toFixed(1)
+                      const icons = (v.challenges ?? []).slice(0, 3).map((c) => POI_ICONS[c.poi_type] ?? '📍').join('')
+                      const labels = mode === 'manual' ? [t('wizard.varOriginal'), t('wizard.varOptimized'), t('wizard.varReversed')] : ['A', 'B', 'C']
+                      return (
+                        <button key={i} className={`variant-tab ${activeVariant === i ? 'active' : ''}`} onClick={() => setActiveVariant(i)}>
+                          <span className="variant-tab-label">{labels[i] ?? `${i + 1}`}</span>
+                          <span className="variant-tab-stats">{km} km {icons}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {regenerating && <div className="wiz-regen-overlay"><div className="wiz-loading-spinner" /></div>}
+
                 <div ref={mapContainer} className="wiz-preview-map" />
                 <p className="wiz-lock-hint">🔒 {t('wizard.lockHint')}</p>
 
-                <RouteStats distanceKm={generatedRoute.routeLength / 1000} durationSec={generatedRoute.routeDuration} ascentM={generatedRoute.route.elevation_gain_m} />
-                <ElevationProfile geometry={generatedRoute.routeGeometry} />
+                <RouteStats distanceKm={(generatedRoute?.routeLength ?? 0) / 1000} durationSec={generatedRoute?.routeDuration} ascentM={generatedRoute?.route?.elevation_gain_m} />
+                <ElevationProfile geometry={generatedRoute?.routeGeometry} />
 
+                {/* Editable challenge list */}
                 <div className="wiz-challenge-list">
-                  {generatedRoute.challenges.map((ch, i) => (
-                    <details key={i} className="wiz-challenge-row-detail">
-                      <summary className="wiz-challenge-row">
-                        <span className="wiz-ch-num">{i + 1}</span>
-                        <span className="wiz-ch-name">{ch.title}</span>
-                        <span className="wiz-ch-icon">{POI_ICONS[ch.poi_type] ?? '⭐'}</span>
-                      </summary>
-                      <p className="wiz-ch-preview">{ch.description}</p>
-                    </details>
+                  {(generatedRoute?.challenges ?? []).map((ch, i) => (
+                    <div key={i} className="wiz-stop-row">
+                      <button className="wiz-stop-move" onClick={() => reorderStop(i, -1)} disabled={i === 0 || regenerating}>↑</button>
+                      <button className="wiz-stop-move" onClick={() => reorderStop(i, 1)} disabled={i === (generatedRoute?.challenges?.length ?? 0) - 1 || regenerating}>↓</button>
+                      <span className="wiz-ch-num">{i + 1}</span>
+                      <span className="wiz-ch-name">{ch.title}</span>
+                      <span className="wiz-ch-icon">{POI_ICONS[ch.poi_type] ?? '⭐'}</span>
+                      <button className="wiz-stop-edit" onClick={() => openStopEditor(i)}>✏️</button>
+                    </div>
                   ))}
                 </div>
 
                 <div className="wiz-preview-actions">
-                  <button className="btn-secondary" onClick={() => { setStep(5); setGeneratedRoute(null) }}>← {t('wizard.edit')}</button>
+                  <button className="btn-secondary" onClick={() => { setStep(5); setVariants([]) }}>← {t('wizard.edit')}</button>
+                  <button className="btn-secondary" onClick={refreshAllStops} disabled={regenerating}>🔄 {t('wizard.refreshStops')}</button>
                   <button className="btn-primary wiz-start-btn" onClick={() => onRouteGenerated(generatedRoute)}>🚀 {t('wizard.startAdventure')}</button>
                 </div>
               </>
+            )}
+
+            {/* Stop editor sheet */}
+            {editingStopIdx != null && (
+              <div className="stop-editor-overlay" onClick={() => setEditingStopIdx(null)}>
+                <div className="stop-editor" onClick={(e) => e.stopPropagation()}>
+                  <div className="stop-editor-handle" />
+                  <h3 className="stop-editor-title">{t('wizard.changeStop')} {editingStopIdx + 1}</h3>
+                  <p className="stop-editor-current">
+                    {t('wizard.currentStop')}: {generatedRoute?.challenges?.[editingStopIdx]?.title}
+                  </p>
+
+                  <input className="form-input" type="text" placeholder={`🔍 ${t('wizard.searchAlternative')}`}
+                    value={stopSearchQuery} onChange={(e) => { setStopSearchQuery(e.target.value); searchStopAlternatives(e.target.value) }} />
+
+                  {stopSearching && <p className="wiz-loading-msg">🔍...</p>}
+
+                  <div className="stop-alt-list">
+                    {stopAlternatives.map((alt) => (
+                      <button key={alt.id} className="stop-alt-row" onClick={() => swapStop(alt)}>
+                        <span>{getCategoryEmoji(alt.category)} {alt.name}</span>
+                      </button>
+                    ))}
+                    {!stopSearching && stopAlternatives.length === 0 && stopSearchQuery.length > 1 && (
+                      <p className="wiz-poi-empty">{t('wizard.noPlacesFound')}</p>
+                    )}
+                  </div>
+
+                  <button className="btn-secondary" onClick={() => setEditingStopIdx(null)}>{t('wizard.cancelEdit')}</button>
+                </div>
+              </div>
             )}
           </div>
         )}
