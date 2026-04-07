@@ -7,12 +7,15 @@ export default {
       loggingIn: 'Anmeldung...', signingUp: 'Registrierung...',
       logout: 'Abmelden', welcomeBack: 'Willkommen zurück', createAccount: 'Konto erstellen',
       tagline: 'Entdecke Routen. Meistere Herausforderungen. Erobere die Natur.',
+      checkEmail: 'E-Mail prüfen', confirmEmailText: 'Wir haben dir eine Bestätigungs-E-Mail gesendet. Klicke auf den Link und melde dich dann an.',
+      backToLogin: 'Zurück zur Anmeldung',
     },
     username: {
       label: 'Benutzername', welcome: 'Willkommen bei TrailQuest!',
       chooseName: 'Wähle deinen Benutzernamen', placeholder: 'trail_hiker_42',
       hint: '3–20 Zeichen: Buchstaben, Zahlen, Unterstrich', taken: 'Bereits vergeben',
-      saving: 'Speichern...', continue: 'Weiter', save: 'Speichern', cancel: 'Abbrechen',
+      saving: 'Speichern...', continue: 'Benutzername bestätigen', save: 'Speichern', cancel: 'Abbrechen',
+      skipForNow: 'Überspringen — später wählen', backToLogin: 'Zurück zur Anmeldung',
     },
     nav: {
       newRoute: 'Neue Route', myRoutes: 'Meine Routen', community: 'Community', profile: 'Profil',
@@ -266,7 +269,7 @@ export default {
     error: {
       generic: 'Ein Fehler ist aufgetreten. Bitte erneut versuchen.',
       invalidCredentials: 'Ungültige E-Mail oder Passwort.',
-      emailInUse: 'Diese E-Mail ist bereits registriert.',
+      emailInUse: 'Diese E-Mail ist bereits registriert.', passwordShort: 'Passwort muss mindestens 6 Zeichen haben.',
     },
   },
 }

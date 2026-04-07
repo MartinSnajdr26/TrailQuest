@@ -254,6 +254,10 @@ h1, h2, h3 { font-weight: 600; font-family: 'Inter', system-ui, sans-serif; }
 .username-setup-title { font-size: 24px; text-align: center; }
 .username-setup-sub { font-size: 14px; color: var(--text-muted); text-align: center; }
 .username-setup-form { width: 100%; display: flex; flex-direction: column; gap: 12px; }
+.username-skip { background: none; border: none; color: var(--md-on-surface-variant, var(--text-muted)); font-size: 14px; text-decoration: underline; cursor: pointer; padding: 8px; }
+.username-signout { background: none; border: none; color: var(--md-on-surface-variant, var(--text-muted)); font-size: 13px; cursor: pointer; padding: 8px; margin-top: 4px; }
+.username-status--ok { color: var(--md-primary, var(--accent)); font-weight: 700; }
+.username-status--taken { color: var(--md-error, var(--danger)); font-weight: 700; }
 .username-input-wrap { position: relative; }
 .username-input { width: 100%; padding-right: 40px; }
 .username-status {

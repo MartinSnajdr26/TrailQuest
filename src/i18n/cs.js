@@ -7,12 +7,15 @@ export default {
       loggingIn: 'Přihlašování...', signingUp: 'Registrace...',
       logout: 'Odhlásit se', welcomeBack: 'Vítej zpět', createAccount: 'Vytvořit účet',
       tagline: 'Objevuj trasy. Plň výzvy. Dobývej přírodu.',
+      checkEmail: 'Zkontroluj svůj e-mail', confirmEmailText: 'Poslali jsme ti potvrzovací e-mail. Klikni na odkaz a pak se přihlaš.',
+      backToLogin: 'Zpět na přihlášení',
     },
     username: {
       label: 'Přezdívka (username)', welcome: 'Vítej v TrailQuest!',
       chooseName: 'Zvol si přezdívku', placeholder: 'trail_hiker_42',
       hint: '3–20 znaků: písmena, čísla, podtržítko', taken: 'Tato přezdívka je již obsazena',
-      saving: 'Ukládám...', continue: 'Pokračovat', save: 'Uložit', cancel: 'Zrušit',
+      saving: 'Ukládám...', continue: 'Potvrdit přezdívku', save: 'Uložit', cancel: 'Zrušit',
+      skipForNow: 'Přeskočit — zvolím později', backToLogin: 'Zpět na přihlášení',
     },
     nav: {
       newRoute: 'Nová trasa', myRoutes: 'Moje trasy', community: 'Komunita', profile: 'Profil',
@@ -277,7 +280,7 @@ export default {
     error: {
       generic: 'Nastala chyba. Zkuste to znovu.',
       invalidCredentials: 'Nesprávný e-mail nebo heslo.',
-      emailInUse: 'Tento e-mail je již zaregistrován.',
+      emailInUse: 'Tento e-mail je již zaregistrován.', passwordShort: 'Heslo musí mít alespoň 6 znaků.',
     },
   },
 }
