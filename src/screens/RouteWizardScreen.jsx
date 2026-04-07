@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -491,24 +491,31 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     setRegenerating(false)
   }
 
-  // Step 6: Preview map — show ONLY first segment + grayed markers
+  // Compute coords for map display
+  const previewAllCoords = useMemo(() => {
+    if (!generatedRoute?.routeGeometry) return []
+    const geo = typeof generatedRoute.routeGeometry === 'string' ? JSON.parse(generatedRoute.routeGeometry) : generatedRoute.routeGeometry
+    return geo?.coordinates ?? geo?.geometry?.coordinates ?? []
+  }, [generatedRoute])
+
+  const previewFirstSeg = useMemo(() => {
+    if (previewAllCoords.length < 2) return previewAllCoords
+    const ch0 = generatedRoute?.challenges?.[0]
+    let end = Math.max(2, Math.floor(previewAllCoords.length * 0.25))
+    if (ch0?.gps_lat && ch0?.gps_lng) {
+      let minD = Infinity
+      previewAllCoords.forEach((c, i) => { const d = Math.hypot(c[1] - ch0.gps_lat, c[0] - ch0.gps_lng); if (d < minD) { minD = d; end = i } })
+    }
+    return previewAllCoords.slice(0, Math.max(end + 1, 2))
+  }, [previewAllCoords, generatedRoute])
+
+  // Init preview map
   useEffect(() => {
-    if (!generatedRoute || !mapContainer.current) return
+    if (!generatedRoute || !mapContainer.current || previewAllCoords.length < 2) return
     if (mapRef.current) { mapRef.current.remove(); mapRef.current = null }
 
-    const geo = typeof generatedRoute.routeGeometry === 'string' ? JSON.parse(generatedRoute.routeGeometry) : generatedRoute.routeGeometry
-    const allCoords = geo?.coordinates ?? geo?.geometry?.coordinates ?? []
-    if (allCoords.length < 2) return
-
-    // Find first challenge coord to split first segment
-    const ch0 = generatedRoute.challenges[0]
-    let firstSegEnd = Math.min(Math.floor(allCoords.length / (generatedRoute.challenges.length + 1)), allCoords.length - 1)
-    if (ch0?.lat && ch0?.lng) {
-      let minD = Infinity
-      allCoords.forEach((c, i) => { const d = haversineDistance(c, [ch0.lng, ch0.lat]); if (d < minD) { minD = d; firstSegEnd = i } })
-    }
-    const firstSeg = allCoords.slice(0, firstSegEnd + 1)
-    const center = firstSeg[Math.floor(firstSeg.length / 2)] ?? allCoords[0]
+    const displayCoords = showFullRoute ? previewAllCoords : previewFirstSeg
+    const center = displayCoords[Math.floor(displayCoords.length / 2)]
     const mapset = ['skiing', 'skitouring'].includes(activity) ? 'winter' : 'outdoor'
 
     const map = new maplibregl.Map({
@@ -518,17 +525,16 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     })
 
     map.on('load', () => {
-      // Only first segment as green line
-      map.addSource('first-seg', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: firstSeg } } })
-      map.addLayer({ id: 'first-seg-line', type: 'line', source: 'first-seg', paint: { 'line-color': '#4ade80', 'line-width': 4 }, layout: { 'line-cap': 'round', 'line-join': 'round' } })
+      map.addSource('preview-route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: displayCoords } } })
+      map.addLayer({ id: 'preview-route-line', type: 'line', source: 'preview-route', paint: { 'line-color': '#22c55e', 'line-width': 4 }, layout: { 'line-cap': 'round', 'line-join': 'round' } })
 
-      // Challenge markers: first = bright, rest = grayed
       generatedRoute.challenges.forEach((ch, i) => {
-        if (!ch.lat || !ch.lng) return
+        const lat = ch.gps_lat ?? ch.lat, lng = ch.gps_lng ?? ch.lng
+        if (!lat || !lng) return
         const el = document.createElement('div')
         el.className = i === 0 ? 'ch-marker ch-marker--next' : 'ch-marker ch-marker--locked'
-        el.innerHTML = i === 0 ? `<span class="ch-marker-num">1</span>` : `<span class="ch-marker-num" style="opacity:0.5">${i + 1}</span>`
-        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([ch.lng, ch.lat]).addTo(map)
+        el.innerHTML = i === 0 ? '<span class="ch-marker-num">1</span>' : `<span class="ch-marker-num" style="opacity:0.5">${i + 1}</span>`
+        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map)
       })
 
       if (firstSeg.length >= 2) {
@@ -538,7 +544,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     })
     mapRef.current = map
     return () => { map.remove(); mapRef.current = null }
-  }, [generatedRoute])
+  }, [generatedRoute, showFullRoute])
 
   function StepIndicator() {
     return (
@@ -674,11 +680,42 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
           </div>
         )}
 
-        {/* Manual mode step 2: settings */}
+        {/* Manual mode step 2: settings + start point */}
         {step === 2 && mode === 'manual' && manualStep === 'settings' && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.manualSettingsTitle')}</h2>
 
+            {/* Start point */}
+            <div className="wiz-section">
+              <h3 className="wiz-section-label">{t('wizard.step2Title')}</h3>
+              <div className={`wiz-loc-card ${startMode === 'gps' ? 'selected' : ''}`} onClick={async () => { setStartMode('gps'); if (!startLocation) await useMyLocation() }}>
+                <span style={{ fontSize: 22 }}>📍</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{t('wizard.useMyLocation')}</div>
+                  {startLocation && startMode === 'gps' && <div style={{ fontSize: 11, color: 'var(--accent)' }}>{startLocation.name}</div>}
+                </div>
+              </div>
+              <div className={`wiz-loc-card ${startMode === 'custom' ? 'selected' : ''}`} onClick={() => setStartMode('custom')}>
+                <span style={{ fontSize: 22 }}>🔍</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{t('wizard.customLocation')}</div>
+                  {customStartName && <div style={{ fontSize: 11, color: 'var(--accent)' }}>{customStartName}</div>}
+                </div>
+              </div>
+              {startMode === 'custom' && (
+                <div>
+                  <input className="form-input" type="text" placeholder={t('wizard.searchLocationPh')} value={locSearchQuery}
+                    autoFocus onChange={(e) => { setLocSearchQuery(e.target.value); searchLocation(e.target.value) }} />
+                  {locResults.length > 0 && <div className="location-dropdown" style={{ position: 'relative' }}>{locResults.map((r, i) => (
+                    <button key={i} className="location-option" onClick={() => { setCustomStartLat(r.lat); setCustomStartLng(r.lng); setCustomStartName(r.name); setLocSearchQuery(r.name); setLocResults([]) }}>
+                      <span className="location-option-name">📌 {r.name}</span>
+                    </button>
+                  ))}</div>}
+                </div>
+              )}
+            </div>
+
+            {/* Activity */}
             <div className="wiz-section">
               <h3 className="wiz-section-label">{t('wizard.step1Title')}</h3>
               <div className="wiz-activity-grid">
@@ -699,15 +736,14 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
             <button className="btn-secondary" onClick={() => setManualStep('search')}>← {t('wizard.manualBackToSearch')}</button>
 
             <button className="btn-primary" onClick={() => {
-              // Use first manual POI as start, generate route
-              const start = manualSelected[0]
-              if (!start || !activity) return
-              setStartLocation({ name: start.name, lat: start.lat, lng: start.lng })
+              const sLat = effectiveStartLat ?? manualSelected[0]?.lat
+              const sLng = effectiveStartLng ?? manualSelected[0]?.lng
+              const sName = effectiveStartName ?? manualSelected[0]?.name ?? 'Start'
+              if (!sLat || !activity) return
+              setStartLocation({ name: sName, lat: sLat, lng: sLng })
               setChallengeCount(manualSelected.length)
-              setDistanceKm(10)
-              setDifficulty('medium')
-              setStep(7) // jump to generation
-            }} disabled={!activity}>
+              setStep(7)
+            }} disabled={!activity || !(effectiveStartLat || manualSelected[0]?.lat)}>
               🚀 {t('wizard.generate')}
             </button>
           </div>
@@ -915,7 +951,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
                       ]
                       const theme = themes[i] ?? themes[0]
                       return (
-                        <button key={i} className={`variant-card ${theme.cls} ${activeVariant === i ? 'active' : ''}`} onClick={() => setActiveVariant(i)}>
+                        <button key={i} className={`variant-card ${theme.cls} ${activeVariant === i ? 'active' : ''}`} onClick={() => { setActiveVariant(i); setShowFullRoute(false) }}>
                           <span className="variant-card-emoji">{theme.emoji}</span>
                           <span className="variant-card-label">{theme.label}</span>
                           <span className="variant-card-stats">📏 {km} km · {(v.challenges ?? []).length} {t('wizard.stops5plus')}</span>
