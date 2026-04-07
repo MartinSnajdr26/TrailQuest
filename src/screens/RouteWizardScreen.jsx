@@ -11,7 +11,7 @@ import ElevationProfile from '../components/ElevationProfile.jsx'
 import RouteStats, { formatDuration } from '../components/RouteStats.jsx'
 
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
-const TOTAL_STEPS = 6
+const TOTAL_STEPS = 7
 
 const ACTIVITIES = [
   { id: 'hiking', icon: '🥾', labelKey: 'wizard.hiking' },
@@ -106,7 +106,8 @@ function LocationInput({ value, onChange, onSelect, placeholder }) {
 export default function RouteWizardScreen({ onRouteGenerated }) {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const [step, setStep] = useState(0) // 0 = mode select
+  const [step, setStep] = useState(0) // 0 = experience type, 1 = mode select, ...
+  const [experienceType, setExperienceType] = useState(null) // 'quiz'|'tasks'|'rebus'|'mix'
   const [mode, setMode] = useState(null) // 'surprise' | 'manual'
 
   const [seasonalEvent, setSeasonalEvent] = useState(null)
@@ -169,10 +170,11 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   const mapRef = useRef(null)
 
   // Step 4 (difficulty) was removed — skip it in both directions
-  function next() { setStep((s) => { const n = Math.min(s + 1, TOTAL_STEPS); return n === 4 ? 5 : n }) }
+  // Steps: 0=experience, 1=mode, 2=activity, 3=location, 4=distance, 5=skip(difficulty), 6=challenges, 7=preview
+  function next() { setStep((s) => { const n = Math.min(s + 1, TOTAL_STEPS); return n === 5 ? 6 : n }) }
   function back() {
-    if (step === 6) { setVariants([]); setGenError(null); setGenerating(false) }
-    setStep((s) => { const n = Math.max(s - 1, 0); return n === 4 ? 3 : n })
+    if (step === 7) { setVariants([]); setGenError(null); setGenerating(false) }
+    setStep((s) => { const n = Math.max(s - 1, 0); return n === 5 ? 4 : n })
   }
 
   async function useMyLocation() {
@@ -280,7 +282,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     })
   }
 
-  // Step 4 (difficulty) removed — skip handled in next()/back()
+  // Step 5 (difficulty) removed — skip handled in next()/back()
 
   // Save wizard state to sessionStorage
   useEffect(() => {
@@ -296,7 +298,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
   // Background POI fetch: trigger when difficulty is selected (entering step 5)
   useEffect(() => {
-    if (step !== 5 || !startLocation || !distanceKm || fetchedPOIs !== null) return
+    if (step !== 6 || !startLocation || !distanceKm || fetchedPOIs !== null) return
     let cancelled = false
     async function fetchPOIs() {
       setPoiFetching(true)
@@ -320,7 +322,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
   // Re-fetch if preferences change on step 5
   useEffect(() => {
-    if (step !== 5 || !startLocation || !distanceKm) return
+    if (step !== 6 || !startLocation || !distanceKm) return
     setFetchedPOIs(null) // triggers the fetch effect above
   }, [poiPrefs.join(',')])
 
@@ -344,13 +346,13 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
   // Step 6: Generate 2 themed variants via smart algorithm
   useEffect(() => {
-    if (step !== 6 || variants.length > 0 || generating) return
+    if (step !== 7 || variants.length > 0 || generating) return
     let cancelled = false
     async function run() {
       setGenerating(true); setGenError(null); setVariants([]); setActiveVariant(0)
 
       const base = {
-        mode, activity: activity ?? 'hiking', experienceType: 'mix',
+        mode, activity: activity ?? 'hiking', experienceType: experienceType ?? 'mix',
         startLat: startLocation?.lat ?? (manualSelected[0]?.lat ?? userLat ?? 50.08),
         startLng: startLocation?.lng ?? (manualSelected[0]?.lng ?? userLng ?? 14.42),
         startName: startLocation?.name ?? manualSelected[0]?.name ?? 'Start',
@@ -454,7 +456,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   async function refreshAllStops() {
     setRegenerating(true); setVariants([]); setActiveVariant(0)
     try {
-      const result = await generateSmartRoute({ mode, activity: activity ?? 'hiking', experienceType: 'mix', startLat: startLocation?.lat ?? 50, startLng: startLocation?.lng ?? 14.4, startName: startLocation?.name ?? 'Start', isLoop, distanceKm: selectedDistance ?? 10, challengeCount, dryRun: true, userId: user?.id, anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY, onProgress: (s) => setProgressMsg(s) })
+      const result = await generateSmartRoute({ mode, activity: activity ?? 'hiking', experienceType: experienceType ?? 'mix', startLat: startLocation?.lat ?? 50, startLng: startLocation?.lng ?? 14.4, startName: startLocation?.name ?? 'Start', isLoop, distanceKm: selectedDistance ?? 10, challengeCount, dryRun: true, userId: user?.id, anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY, onProgress: (s) => setProgressMsg(s) })
       setVariants([result])
     } catch (e) { setGenError(e.message) }
     setRegenerating(false)
@@ -529,17 +531,36 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
       )}
 
       <div className="wiz-body">
-        {/* ── Step 0: Mode Selection ───────────────── */}
+        {/* ── Step 0: Experience Type ───────────────── */}
         {step === 0 && (
+          <div className="wiz-step">
+            <h2 className="wiz-title">{t('wizard.experienceTitle')}</h2>
+            {[
+              { type: 'quiz', emoji: '🧠', titleKey: 'wizard.expQuiz', descKey: 'wizard.expQuizDesc' },
+              { type: 'tasks', emoji: '📸', titleKey: 'wizard.expTasks', descKey: 'wizard.expTasksDesc' },
+              { type: 'rebus', emoji: '🔤', titleKey: 'wizard.expRebus', descKey: 'wizard.expRebusDesc' },
+              { type: 'mix', emoji: '🎲', titleKey: 'wizard.expMix', descKey: 'wizard.expMixDesc' },
+            ].map((opt) => (
+              <div key={opt.type} className={`wiz-exp-card ${experienceType === opt.type ? 'selected' : ''}`}
+                onClick={() => { setExperienceType(opt.type); next() }}>
+                <span className="wiz-exp-icon">{opt.emoji}</span>
+                <div><div className="wiz-exp-title">{t(opt.titleKey)}</div><div className="wiz-exp-desc">{t(opt.descKey)}</div></div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Step 1: Mode Selection ───────────────── */}
+        {step === 1 && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.modeTitle')}</h2>
             <div className="wiz-mode-grid">
-              <button className="wiz-mode-card" onClick={() => { setMode('manual'); setStep(1) }}>
+              <button className="wiz-mode-card" onClick={() => { setMode('manual'); setStep(2) }}>
                 <span className="wiz-mode-icon">🗺</span>
                 <strong>{t('wizard.modeCustom')}</strong>
                 <p className="wiz-mode-desc">{t('wizard.modeCustomDesc')}</p>
               </button>
-              <button className="wiz-mode-card" onClick={() => { setMode('surprise'); setStep(1) }}>
+              <button className="wiz-mode-card" onClick={() => { setMode('surprise'); setStep(2) }}>
                 <span className="wiz-mode-icon">🎲</span>
                 <strong>{t('wizard.modeSurprise')}</strong>
                 <p className="wiz-mode-desc">{t('wizard.modeSurpriseDesc')}</p>
@@ -555,7 +576,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
           </div>
         )}
         {/* Step 1 — Activity (surprise) OR POI search (manual) */}
-        {step === 1 && mode === 'manual' && manualStep === 'search' && (
+        {step === 2 && mode === 'manual' && manualStep === 'search' && (
           <div className="wiz-step">
             <h2 className="wiz-title">🗺 {t('wizard.manualSearchTitle')}</h2>
 
@@ -625,7 +646,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
         )}
 
         {/* Manual mode step 2: settings */}
-        {step === 1 && mode === 'manual' && manualStep === 'settings' && (
+        {step === 2 && mode === 'manual' && manualStep === 'settings' && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.manualSettingsTitle')}</h2>
 
@@ -656,7 +677,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
               setChallengeCount(manualSelected.length)
               setDistanceKm(10)
               setDifficulty('medium')
-              setStep(6) // jump to generation
+              setStep(7) // jump to generation
             }} disabled={!activity}>
               🚀 {t('wizard.generate')}
             </button>
@@ -664,7 +685,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
         )}
 
         {/* Step 1 — Activity (surprise mode only) */}
-        {step === 1 && mode !== 'manual' && (
+        {step === 2 && mode !== 'manual' && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.step1Title')}</h2>
             <div className="wiz-activity-grid">
@@ -678,8 +699,8 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
           </div>
         )}
 
-        {/* Step 2 */}
-        {step === 2 && (
+        {/* Step 3: Location */}
+        {step === 3 && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.step2Title')}</h2>
             <button className="btn-primary wiz-gps-btn" onClick={async () => { const loc = await useMyLocation(); if (loc) next() }}>📍 {t('wizard.useMyLocation')}</button>
@@ -695,7 +716,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
         )}
 
         {/* Step 3 */}
-        {step === 3 && (
+        {step === 4 && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.step3Title')}</h2>
             <div className="wiz-option-grid">
@@ -734,8 +755,8 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
         {/* Step 4 removed — skip handled by effect below */}
 
-        {/* Step 5: Challenges + POI picker */}
-        {step === 5 && (
+        {/* Step 6: Challenges + POI picker */}
+        {step === 6 && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.step5Title')}</h2>
 
@@ -808,7 +829,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
         )}
 
         {/* Step 6: Preview with variants */}
-        {step === 6 && (
+        {step === 7 && (
           <div className="wiz-step wiz-step-preview">
             {generating && <div className="wiz-loading"><div className="wiz-loading-spinner" /><p className="wiz-loading-msg">{progressMsg}</p></div>}
             {genError && !generating && <div className="wiz-error"><p>{genError}</p><button className="btn-primary" onClick={() => { setGenError(null); setVariants([]); setGenerating(false) }}>{t('wizard.retry')}</button></div>}
@@ -868,7 +889,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
                 </div>
 
                 <div className="wiz-preview-actions">
-                  <button className="btn-secondary" onClick={() => { setStep(5); setVariants([]) }}>← {t('wizard.edit')}</button>
+                  <button className="btn-secondary" onClick={() => { setStep(6); setVariants([]) }}>← {t('wizard.edit')}</button>
                   <button className="btn-secondary" onClick={refreshAllStops} disabled={regenerating}>🔄 {t('wizard.refreshStops')}</button>
                   <button className="btn-primary wiz-start-btn" disabled={regenerating} onClick={async () => {
                     if (!generatedRoute) return

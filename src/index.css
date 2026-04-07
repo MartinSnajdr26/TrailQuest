@@ -2147,3 +2147,16 @@ h1, h2, h3 { font-weight: 600; font-family: 'Inter', system-ui, sans-serif; }
 .wiz-counter-num { font-size: 56px; font-weight: 500; color: var(--md-primary); line-height: 1; }
 .wiz-counter-label { font-size: 14px; color: var(--md-on-surface-variant); margin-top: 4px; }
 .wiz-counter-hint { text-align: center; font-size: 13px; color: var(--md-on-surface-variant); line-height: 1.4; }
+
+/* ─── Experience type cards ─────────────────────────────────────────────── */
+.wiz-exp-card {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px; border-radius: var(--r-lg); cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card);
+  transition: all var(--dur-short);
+}
+.wiz-exp-card.selected { border-color: var(--accent); background: var(--accent-dim); }
+.wiz-exp-card:active { transform: scale(0.98); }
+.wiz-exp-icon { font-size: 36px; flex-shrink: 0; }
+.wiz-exp-title { font-weight: 600; font-size: 16px; margin-bottom: 4px; }
+.wiz-exp-desc { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
