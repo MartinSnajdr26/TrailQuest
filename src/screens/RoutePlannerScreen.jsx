@@ -13,7 +13,7 @@ import ElevationProfile from '../components/ElevationProfile.jsx'
 
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
 
-export default function RoutePlannerScreen({ activity, experienceType, challengeCount, startLat, startLng, startName, isLoop, variantTheme, distanceKm, onBack, onStartRoute }) {
+export default function RoutePlannerScreen({ activity, experienceType, challengeCount, startLat, startLng, startName, isLoop, distanceKm, selectedPOIs: initialPOIs, onBack, onStartRoute }) {
   const { t } = useTranslation()
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -63,7 +63,15 @@ export default function RoutePlannerScreen({ activity, experienceType, challenge
   useEffect(() => {
     if (!mapReady) return
     loadPOICache(sLat, sLng).then(() => {
-      autoSelectPOIs()
+      // If POIs were pre-selected in wizard, use them
+      if (initialPOIs?.length > 0) {
+        setWaypoints(initialPOIs)
+        setSelectedIds(new Set(initialPOIs.map((p) => p.id)))
+        initialPOIs.forEach((p, i) => addWPMarker(mapRef.current, p, i))
+        scheduleReroute(200)
+      } else {
+        scheduleReroute(200) // Just compute a simple loop
+      }
     })
   }, [mapReady])
 
@@ -149,7 +157,7 @@ export default function RoutePlannerScreen({ activity, experienceType, challenge
   function autoSelectPOIs() {
     const cache = getCache()
     if (!cache?.pois?.length) { scheduleReroute(100); return }
-    const selected = selectPOIs({ allPOIs: cache.pois, startLat: sLat, startLng: sLng, targetDistanceKm: sliderKm, challengeCount, theme: variantTheme, isLoop })
+    const selected = selectPOIs({ allPOIs: cache.pois, startLat: sLat, startLng: sLng, targetDistanceKm: sliderKm, challengeCount, theme: null, isLoop })
     const sorted = isLoop && selected.length > 1 ? sortForLoop(sLat, sLng, selected) : selected
     setWaypoints(sorted)
     setSelectedIds(new Set(sorted.map((p) => p.id)))
@@ -208,7 +216,7 @@ export default function RoutePlannerScreen({ activity, experienceType, challenge
       const result = await generateSmartRoute({
         dryRun: false, mode: pois.length > 0 ? 'manual' : 'auto', activity, experienceType,
         startLat: wps[0]?.lat ?? sLat, startLng: wps[0]?.lng ?? sLng, startName, isLoop,
-        distanceKm: parseFloat(routeStats?.distanceKm ?? sliderKm), challengeCount, variantTheme,
+        distanceKm: parseFloat(routeStats?.distanceKm ?? sliderKm), challengeCount,
         manualPOIs: pois, precomputedGeometry: routeGeometry, precomputedDistance: parseFloat(routeStats?.distanceKm ?? 10) * 1000,
         anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
       })
