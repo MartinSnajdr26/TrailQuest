@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { suggestPlace, generateRoute, searchPOIsPublic, getCategoryEmoji } from '../lib/routeGenerator.js'
+import { suggestPlace, searchPOIsPublic, getCategoryEmoji } from '../lib/routeGenerator.js'
+import { generateSmartRoute, clearPOICache } from '../lib/smartRouteAlgorithm.js'
 import { haversineDistance } from '../lib/geo.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
@@ -341,50 +342,53 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     }
   }
 
-  // Step 6: Generate 2 themed variants sequentially
+  // Step 6: Generate 2 themed variants via smart algorithm
   useEffect(() => {
     if (step !== 6 || variants.length > 0 || generating) return
     let cancelled = false
     async function run() {
       setGenerating(true); setGenError(null); setVariants([]); setActiveVariant(0)
 
-      const base = getGenParams()
+      const base = {
+        mode, activity: activity ?? 'hiking', experienceType: 'mix',
+        startLat: startLocation?.lat ?? (manualSelected[0]?.lat ?? userLat ?? 50.08),
+        startLng: startLocation?.lng ?? (manualSelected[0]?.lng ?? userLng ?? 14.42),
+        startName: startLocation?.name ?? manualSelected[0]?.name ?? 'Start',
+        endLat: isLoop ? undefined : endLocation?.lat, endLng: isLoop ? undefined : endLocation?.lng,
+        isLoop, distanceKm: selectedDistance ?? 10,
+        challengeCount: (mode === 'manual' && manualSelected.length > 0) ? manualSelected.length : challengeCount,
+        manualPOIs: mode === 'manual' ? manualSelected : undefined,
+        dryRun: true, userId: user?.id,
+        anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
+      }
 
-      // For manual mode: just generate one route with user's POIs
+      // Manual mode: single route
       if (base.manualPOIs?.length > 0) {
         setProgressMsg(t('wizard.progPlanning'))
-        const result = await generateRoute({ ...base, dryRun: true }).catch(() => null)
-        if (!cancelled) {
-          if (result) setVariants([result])
-          else setGenError(t('error.generic'))
-          setGenerating(false)
-        }
+        const result = await generateSmartRoute({ ...base, onProgress: (m) => !cancelled && setProgressMsg(m) }).catch(() => null)
+        if (!cancelled) { if (result) setVariants([result]); else setGenError(t('error.generic')); setGenerating(false) }
         return
       }
 
       // Auto mode: 2 themed variants
-      // Variant A — Food & Drink 🍺
       setProgressMsg('🍺 ' + t('wizard.progFoodDrink'))
-      const varA = await generateRoute({
-        ...base, dryRun: true, poiPreferences: ['pubs', 'wine', 'huts'],
-        onProgress: (s) => { if (!cancelled && s !== 'done') setProgressMsg('🍺 ' + t('wizard.progFoodDrink')) },
-      }).catch((e) => { console.warn('Variant A failed:', e); return null })
-
+      const varA = await generateSmartRoute({
+        ...base, variantSeed: 0, variantTheme: 'food_drink',
+        onProgress: (m) => { if (!cancelled) setProgressMsg(m) },
+      }).catch((e) => { console.warn('Variant A:', e); return null })
       if (cancelled) return
-      const partialVariants = varA ? [varA] : []
-      setVariants([...partialVariants]) // show A immediately
+      if (varA) setVariants([varA])
 
-      // Variant B — Culture & Nature 🏰
       setProgressMsg('🏰 ' + t('wizard.progCultureNature'))
-      const usedNames = (varA?.challenges ?? []).map((c) => c.title).filter(Boolean)
-      const varB = await generateRoute({
-        ...base, dryRun: true, poiPreferences: ['landmarks', 'viewpoints', 'nature'],
-        onProgress: (s) => { if (!cancelled && s !== 'done') setProgressMsg('🏰 ' + t('wizard.progCultureNature')) },
-      }).catch((e) => { console.warn('Variant B failed:', e); return null })
+      const usedNames = (varA?.challenges ?? []).map((c) => c.poi_name).filter(Boolean)
+      const varB = await generateSmartRoute({
+        ...base, variantSeed: 1, variantTheme: 'culture_nature', usedPOINames: usedNames,
+        onProgress: (m) => { if (!cancelled) setProgressMsg(m) },
+      }).catch((e) => { console.warn('Variant B:', e); return null })
 
       if (cancelled) return
       const all = [varA, varB].filter(Boolean)
-      if (all.length === 0) setGenError(t('error.generic'))
+      if (!all.length) setGenError(t('error.generic'))
       else setVariants(all)
       setGenerating(false)
     }
@@ -426,7 +430,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     // Regenerate route with new waypoints
     try {
       const pois = newChallenges.map((c) => ({ name: c.title, lat: c.lat, lng: c.lng, poiType: c.poi_type }))
-      const result = await generateRoute({ ...getGenParams(pois), dryRun: true })
+      const result = await generateSmartRoute({ ...getGenParams(pois), dryRun: true, userId: user?.id, anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY })
       setVariants((prev) => { const next = [...prev]; next[activeVariant] = result; return next })
     } catch (e) { console.warn('Regen failed:', e) }
     setEditingStopIdx(null); setRegenerating(false)
@@ -441,7 +445,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     setRegenerating(true)
     try {
       const pois = challenges.map((c) => ({ name: c.title, lat: c.lat, lng: c.lng, poiType: c.poi_type }))
-      const result = await generateRoute({ ...getGenParams(pois), dryRun: true })
+      const result = await generateSmartRoute({ ...getGenParams(pois), dryRun: true, userId: user?.id, anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY })
       setVariants((prev) => { const next = [...prev]; next[activeVariant] = result; return next })
     } catch (e) { console.warn('Reorder regen failed:', e) }
     setRegenerating(false)
@@ -450,7 +454,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   async function refreshAllStops() {
     setRegenerating(true); setVariants([]); setActiveVariant(0)
     try {
-      const result = await generateRoute({ ...getGenParams(undefined), dryRun: true, onProgress: (s) => setProgressMsg(s) })
+      const result = await generateSmartRoute({ mode, activity: activity ?? 'hiking', experienceType: 'mix', startLat: startLocation?.lat ?? 50, startLng: startLocation?.lng ?? 14.4, startName: startLocation?.name ?? 'Start', isLoop, distanceKm: selectedDistance ?? 10, challengeCount, dryRun: true, userId: user?.id, anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY, onProgress: (s) => setProgressMsg(s) })
       setVariants([result])
     } catch (e) { setGenError(e.message) }
     setRegenerating(false)
@@ -871,7 +875,8 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
                     if (generatedRoute.isDryRun) {
                       setRegenerating(true)
                       try {
-                        const saved = await generateRoute({ ...getGenParams(), dryRun: false, preGeneratedRoute: generatedRoute, userId: user?.id })
+                        const saved = await generateSmartRoute({ preGeneratedData: generatedRoute, userId: user?.id })
+                        clearPOICache()
                         onRouteGenerated(saved)
                       } catch (e) { setGenError(e.message); setRegenerating(false) }
                     } else {
