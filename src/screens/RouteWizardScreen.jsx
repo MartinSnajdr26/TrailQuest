@@ -53,10 +53,12 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
   // POI selection
   const [poiSearch, setPoiSearch] = useState('')
-  const [poiCategory, setPoiCategory] = useState('')
-  const [poiResults, setPoiResults] = useState([])
+  const [poiCategory, setPoiCategory] = useState('all')
+  const [allCachedPOIs, setAllCachedPOIs] = useState([]) // full cache with distances
+  const [poiResults, setPoiResults] = useState([]) // displayed results
   const [poiSearching, setPoiSearching] = useState(false)
   const [selectedPOIs, setSelectedPOIs] = useState([])
+  const [poiRadiusKm, setPoiRadiusKm] = useState(15)
   const poiDebounceRef = useRef(null)
 
   // Challenge count
@@ -95,42 +97,56 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     }, 350)
   }
 
-  // POI search
-  function searchPOIs(query, category) {
+  // Load POI cache on step 3 entry, compute distances
+  useEffect(() => {
+    if (step !== 3 || !effectiveStartLat) return
     setPoiSearching(true)
+    loadPOICache(effectiveStartLat, effectiveStartLng).then((pois) => {
+      const withDist = (pois ?? []).map((p) => ({
+        ...p, id: p.id, name: p.name, description: p.description, category: p.poi_category, poi_category: p.poi_category,
+        lat: p.gps_lat, lng: p.gps_lng, gps_lat: p.gps_lat, gps_lng: p.gps_lng,
+        quality_score: p.quality_score ?? 5, source: 'db',
+        distanceKm: haversineDistance([effectiveStartLng, effectiveStartLat], [p.gps_lng, p.gps_lat]) / 1000,
+      })).sort((a, b) => a.distanceKm - b.distanceKm)
+      setAllCachedPOIs(withDist)
+      setPoiSearching(false)
+    })
+  }, [step, effectiveStartLat])
+
+  // Filter cached POIs by radius + category + search query
+  const filteredPOIs = allCachedPOIs.filter((p) => {
+    if (p.distanceKm > poiRadiusKm) return false
+    if (poiCategory !== 'all' && p.poi_category !== poiCategory) return false
+    if (poiSearch.length > 1 && !p.name.toLowerCase().includes(poiSearch.toLowerCase())) return false
+    return true
+  })
+
+  // Category counts within radius
+  const categoryCounts = allCachedPOIs.filter((p) => p.distanceKm <= poiRadiusKm).reduce((acc, p) => { acc[p.poi_category] = (acc[p.poi_category] ?? 0) + 1; return acc }, {})
+
+  // Displayed results (filtered + Mapy.com supplement for text search)
+  function handlePoiSearch(query) {
+    setPoiSearch(query)
+    if (query.length < 3) return
     if (poiDebounceRef.current) clearTimeout(poiDebounceRef.current)
     poiDebounceRef.current = setTimeout(async () => {
-      let results = []
-      // DB search
-      let q = supabase.from('custom_pois').select('*').eq('is_approved', true).eq('is_active', true)
-      if (query.length > 1) q = q.ilike('name', `%${query}%`)
-      if (category) q = q.eq('poi_category', category)
-      const { data } = await q.limit(20)
-      results = (data ?? []).map((p) => ({
-        id: p.id, name: p.name, description: p.description, category: p.poi_category,
-        lat: p.gps_lat, lng: p.gps_lng, gps_lat: p.gps_lat, gps_lng: p.gps_lng,
-        quality: p.quality_score, source: 'db',
-        distanceKm: effectiveStartLat ? (haversineDistance([effectiveStartLng, effectiveStartLat], [p.gps_lng, p.gps_lat]) / 1000).toFixed(1) : '?',
-      }))
-      // Supplement with Mapy.com if text query
-      if (query.length > 2) {
-        try {
-          const items = await suggestPlace(query, effectiveStartLat, effectiveStartLng)
-          items.forEach((r) => { if (!results.some((p) => p.name === r.name)) results.push({ id: `m_${r.name}`, name: r.name, description: r.label, category: 'other', lat: r.lat, lng: r.lng, gps_lat: r.lat, gps_lng: r.lng, quality: 5, source: 'mapy', distanceKm: effectiveStartLat ? (haversineDistance([effectiveStartLng, effectiveStartLat], [r.lng, r.lat]) / 1000).toFixed(1) : '?' }) })
-        } catch {}
-      }
-      results.sort((a, b) => parseFloat(a.distanceKm) - parseFloat(b.distanceKm))
-      setPoiResults(results)
-      setPoiSearching(false)
+      try {
+        const items = await suggestPlace(query, effectiveStartLat, effectiveStartLng)
+        const mapyPOIs = items.filter((r) => r.lat && r.lng).map((r) => ({
+          id: `m_${r.name}_${r.lat}`, name: r.name, description: r.label, category: 'other', poi_category: 'other',
+          lat: r.lat, lng: r.lng, gps_lat: r.lat, gps_lng: r.lng, quality_score: 5, source: 'mapy',
+          distanceKm: haversineDistance([effectiveStartLng, effectiveStartLat], [r.lng, r.lat]) / 1000,
+        })).filter((p) => p.distanceKm <= poiRadiusKm)
+        // Append to display — merged with local results
+        const localNames = new Set(filteredPOIs.map((p) => p.name.toLowerCase()))
+        const extra = mapyPOIs.filter((p) => !localNames.has(p.name.toLowerCase()))
+        setPoiResults(extra)
+      } catch { setPoiResults([]) }
     }, 300)
   }
 
-  // Load nearby POIs when entering step 3 (POI selection)
-  useEffect(() => {
-    if (step === 3 && effectiveStartLat) {
-      loadPOICache(effectiveStartLat, effectiveStartLng).then(() => searchPOIs('', ''))
-    }
-  }, [step, effectiveStartLat])
+  // Combined display list: filtered cache + mapy supplement
+  const displayedPOIs = [...filteredPOIs.slice(0, 40), ...poiResults].slice(0, 50)
 
   function addPOI(poi) {
     if (selectedPOIs.some((p) => p.id === poi.id)) return
@@ -255,45 +271,90 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
         {/* ── Step 3: POI Selection ────────────────────── */}
         {step === 3 && (
-          <div className="wiz-step">
-            <h2 className="wiz-title">{t('wizard.poiSelectTitle')}</h2>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>{t('wizard.poiSelectDesc')}</p>
+          <div className="wiz-step" style={{ gap: 0 }}>
+            <h2 className="wiz-title" style={{ marginBottom: 4 }}>{t('wizard.poiSelectTitle')}</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10, textAlign: 'center' }}>{t('wizard.poiSelectDesc')}</p>
 
+            {/* Search */}
             <input className="form-input" type="text" placeholder={`🔍 ${t('wizard.manualSearchPh')}`}
-              value={poiSearch} onChange={(e) => { setPoiSearch(e.target.value); searchPOIs(e.target.value, poiCategory) }} />
+              value={poiSearch} onChange={(e) => handlePoiSearch(e.target.value)} />
 
-            <div className="wiz-chip-row" style={{ flexWrap: 'nowrap', overflowX: 'auto', marginTop: 8 }}>
-              {POI_CATEGORIES.map((c) => (
-                <button key={c.id} className={`wiz-chip ${poiCategory === c.id ? 'selected' : ''}`} style={{ flexShrink: 0 }}
-                  onClick={() => { setPoiCategory(c.id); searchPOIs(poiSearch, c.id) }}>{c.icon} {c.label}</button>
+            {/* Category chips with counts */}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '8px 0', scrollbarWidth: 'none' }}>
+              {POI_CATEGORIES.filter((c) => c.id === '' || (categoryCounts[c.id] ?? 0) > 0).map((c) => (
+                <button key={c.id} onClick={() => setPoiCategory(c.id || 'all')} style={{
+                  flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 16,
+                  border: poiCategory === (c.id || 'all') ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  background: poiCategory === (c.id || 'all') ? 'var(--accent-dim)' : 'var(--bg-raised)',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text)', transition: 'all 120ms',
+                }}>
+                  <span style={{ fontSize: 14 }}>{c.icon}</span> {c.label}
+                  {c.id && categoryCounts[c.id] > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-card)', borderRadius: 8, padding: '0 5px' }}>{categoryCounts[c.id]}</span>}
+                </button>
               ))}
             </div>
 
-            <div className="manual-results" style={{ marginTop: 8 }}>
-              {poiSearching && <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>🔍...</p>}
-              {poiResults.map((poi) => {
+            {/* Radius slider */}
+            <div style={{ padding: '4px 0 8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>
+                <span>{t('wizard.showWithinRadius')}</span>
+                <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{poiRadiusKm} km</span>
+              </div>
+              <input type="range" min={2} max={50} step={1} value={poiRadiusKm} onChange={(e) => setPoiRadiusKm(Number(e.target.value))} className="planner-slider" />
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {displayedPOIs.length > 0 ? `${filteredPOIs.length} míst do ${poiRadiusKm} km` : ''}
+              </div>
+            </div>
+
+            {/* POI list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
+              {poiSearching && <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>🔍 Načítám místa...</p>}
+              {!poiSearching && displayedPOIs.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Žádná místa do {poiRadiusKm} km</div>
+                  <button onClick={() => setPoiRadiusKm(Math.min(50, poiRadiusKm + 10))} style={{ padding: '8px 20px', borderRadius: 16, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 13, cursor: 'pointer' }}>
+                    Rozšířit na {Math.min(50, poiRadiusKm + 10)} km
+                  </button>
+                </div>
+              )}
+              {displayedPOIs.map((poi) => {
                 const isAdded = selectedPOIs.some((p) => p.id === poi.id)
+                const dKm = poi.distanceKm
                 return (
-                  <div key={poi.id} className="manual-result-row">
-                    <span className="manual-result-icon">{POI_ICONS[poi.category] ?? '📍'}</span>
-                    <div className="manual-result-info">
-                      <span className="manual-result-name">{poi.name}</span>
-                      {poi.description && <span className="manual-result-desc">{poi.description.slice(0, 50)}</span>}
+                  <div key={poi.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 12, cursor: 'pointer',
+                    background: isAdded ? 'var(--accent-dim)' : 'var(--bg-card)', border: isAdded ? '1.5px solid var(--accent-border)' : '1px solid var(--border)',
+                  }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--bg-raised)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                      {POI_ICONS[poi.poi_category ?? poi.category] ?? '📍'}
                     </div>
-                    <span className="manual-result-dist">{poi.distanceKm} km</span>
-                    <button className={`manual-add-btn ${isAdded ? 'added' : ''}`} onClick={() => isAdded ? removePOI(poi.id) : addPOI(poi)}>{isAdded ? '✓' : '+'}</button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{poi.name}</div>
+                      {poi.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{poi.description.slice(0, 50)}</div>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: dKm < 5 ? 'var(--accent)' : 'var(--text-muted)' }}>
+                        {dKm < 1 ? `${Math.round(dKm * 1000)} m` : `${dKm.toFixed(1)} km`}
+                      </span>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); isAdded ? removePOI(poi.id) : addPOI(poi) }} style={{
+                      width: 30, height: 30, borderRadius: '50%', border: 'none', flexShrink: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700,
+                      background: isAdded ? 'var(--bg-raised)' : 'var(--accent)', color: isAdded ? 'var(--accent)' : '#fff',
+                    }}>{isAdded ? '✓' : '+'}</button>
                   </div>
                 )
               })}
             </div>
 
+            {/* Selected list */}
             {selectedPOIs.length > 0 && (
-              <div className="manual-selected" style={{ marginTop: 12 }}>
+              <div className="manual-selected" style={{ marginTop: 10 }}>
                 <h3 className="wiz-section-label">{t('wizard.manualSelectedLabel')} ({selectedPOIs.length})</h3>
                 {selectedPOIs.map((poi, i) => (
                   <div key={poi.id} className="manual-selected-row">
                     <span className="manual-selected-order">{i + 1}</span>
-                    <span className="manual-selected-icon">{POI_ICONS[poi.category] ?? '📍'}</span>
+                    <span className="manual-selected-icon">{POI_ICONS[poi.poi_category ?? poi.category] ?? '📍'}</span>
                     <span className="manual-selected-name">{poi.name}</span>
                     <button className="manual-move-btn" onClick={() => movePOI(i, -1)} disabled={i === 0}>↑</button>
                     <button className="manual-move-btn" onClick={() => movePOI(i, 1)} disabled={i === selectedPOIs.length - 1}>↓</button>
@@ -303,9 +364,9 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
               </div>
             )}
 
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center' }}>{t('wizard.poiSelectHint')}</p>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, textAlign: 'center' }}>{t('wizard.poiSelectHint')}</p>
 
-            <button className="btn-primary" style={{ marginTop: 12 }} onClick={next}>
+            <button className="btn-primary" style={{ marginTop: 8 }} onClick={next}>
               {selectedPOIs.length > 0 ? `${t('wizard.next')} (${selectedPOIs.length} ${t('wizard.stops5plus')}) →` : t('wizard.continueNoStops')}
             </button>
           </div>

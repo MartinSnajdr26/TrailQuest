@@ -57,6 +57,7 @@ export default {
       expMix: 'Mix', expMixDesc: 'Náhodná kombinace kvízů, úkolů a pozorování.',
       customLocation: 'Zadat jiné místo', searchLocationPh: 'Praha, Karlštejn, Beskydy...',
       firstSegment: 'První úsek', fullRoute: 'Celá trasa',
+      showWithinRadius: 'Zobrazit místa do vzdálenosti:',
       poiSelectTitle: 'Jaká místa chceš navštívit?', poiSelectDesc: 'Vyber místa, přes která povede tvá trasa.',
       poiSelectHint: '💡 Na mapě můžeš přidat nebo přesunout zastávky.',
       continueNoStops: 'Pokračovat bez zastávek →',

@@ -57,6 +57,7 @@ export default {
       expMix: 'Mix', expMixDesc: 'Zufällige Kombination aus Quiz, Aufgaben und Beobachtungen.',
       customLocation: 'Anderen Ort eingeben', searchLocationPh: 'Prag, Karlstein...',
       firstSegment: 'Erster Abschnitt', fullRoute: 'Ganze Route',
+      showWithinRadius: 'Orte im Umkreis anzeigen:',
       poiSelectTitle: 'Welche Orte willst du besuchen?', poiSelectDesc: 'Wähle Orte, durch die deine Route führt.',
       poiSelectHint: '💡 Du kannst auf der Karte Stopps hinzufügen.',
       continueNoStops: 'Ohne Stopps fortfahren →',

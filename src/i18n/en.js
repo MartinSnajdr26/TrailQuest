@@ -57,6 +57,7 @@ export default {
       expMix: 'Mix', expMixDesc: 'Random combination of quizzes, tasks and observations.',
       customLocation: 'Enter different location', searchLocationPh: 'Prague, Karlstejn...',
       firstSegment: 'First segment', fullRoute: 'Full route',
+      showWithinRadius: 'Show places within:',
       poiSelectTitle: 'Which places do you want to visit?', poiSelectDesc: 'Pick places your route will pass through.',
       poiSelectHint: '💡 You can add or move stops on the map.',
       continueNoStops: 'Continue without stops →',
