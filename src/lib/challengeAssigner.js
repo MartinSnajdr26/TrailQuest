@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js'
+import { getGenericRiddle, generateStoryRiddle } from './rebusSystem.js'
 
 const CHECKIN = {
   minipivovar: (n) => ({ task: `Zastav se v ${n}! 🍺 Dej si místní pivo.`, alternative: 'Vyfotit vývěsní štít', fun_fact: 'Každý minipivovar vaří pivo podle vlastního receptu.' }),
@@ -32,7 +33,70 @@ function genericQuiz(poi) {
   return { question: `Jaký typ místa je ${poi.name}?`, options: [poi.poi_category || 'Turistický cíl', 'Restaurace', 'Hotel', 'Muzeum'], correct_answer: poi.poi_category || 'Turistický cíl', fun_fact: poi.description || `${poi.name} stojí za návštěvu!` }
 }
 
-export async function assignChallenge({ poi, stopIndex, experienceType, rebusWord, storyNarrative, region, anthropicKey }) {
+// Story-driven rebus challenge assignment
+async function assignRebusChallenge({ poi, stopIndex, rebusWord, story, anthropicKey }) {
+  const letter = rebusWord?.[stopIndex] || '?'
+  let riddleData = null
+
+  // Try pre-written story riddle first
+  if (story?.narrative_template?.stops) {
+    const storyStop = story.narrative_template.stops[stopIndex % story.narrative_template.stops.length]
+    if (storyStop?.riddle) {
+      riddleData = {
+        atmosphere: storyStop.atmosphere,
+        riddle: storyStop.riddle,
+        riddle_type: storyStop.riddle_type || 'choice',
+        options: storyStop.options || [],
+        correct_answer: storyStop.correct_answer,
+        hint: storyStop.hint,
+        wrong_answer_text: storyStop.wrong_answer_text,
+        correct_answer_text: storyStop.correct_answer_text,
+      }
+    }
+  }
+
+  // Fallback: Claude generates riddle
+  if (!riddleData) {
+    const generated = await generateStoryRiddle(stopIndex, story?.theme || 'mystery', poi.name, letter, anthropicKey)
+    if (generated) riddleData = generated
+  }
+
+  // Final fallback: generic riddles
+  if (!riddleData) riddleData = getGenericRiddle(stopIndex)
+
+  return {
+    type: 'rebus',
+    content_json: {
+      story_riddle: true,
+      story_title: story?.title_cs,
+      story_atmosphere: riddleData.atmosphere || null,
+      riddle: riddleData.riddle,
+      riddle_type: riddleData.riddle_type || 'choice',
+      options: riddleData.options || [],
+      correct_answer: riddleData.correct_answer,
+      hint_level_1: riddleData.hint,
+      hint_level_2: riddleData.options?.length
+        ? `Zkus vyloučit: ${riddleData.options.filter(o => !o.startsWith(riddleData.correct_answer)).slice(0, 2).map(o => o.split(':')[0].trim()).join(' a ')} jsou špatně`
+        : null,
+      hint_level_3: `Správná odpověď začíná: ${riddleData.correct_answer?.[0] || '?'}`,
+      wrong_answer_text: riddleData.wrong_answer_text || 'Zkus to znovu!',
+      correct_answer_text: riddleData.correct_answer_text || 'Správně! Získáváš písmeno!',
+      rebus_letter: letter,
+      rebus_index: stopIndex + 1,
+      rebus_total: rebusWord?.length || 0,
+      rebus_progress: rebusWord ? rebusWord.split('').map((l, i) => i < stopIndex ? l : '_').join(' ') : '',
+      place_name: poi.name,
+      question_type: 'rebus',
+    }
+  }
+}
+
+export async function assignChallenge({ poi, stopIndex, experienceType, rebusWord, story, storyNarrative, region, anthropicKey }) {
+  // Story-driven rebus: dedicated path
+  if (experienceType === 'rebus') {
+    return assignRebusChallenge({ poi, stopIndex, rebusWord, story, anthropicKey })
+  }
+
   const cat = poi.poi_category ?? 'other'
   let type, content
 
@@ -43,7 +107,6 @@ export async function assignChallenge({ poi, stopIndex, experienceType, rebusWor
 
   if (experienceType === 'quiz') type = 'quiz'
   else if (experienceType === 'tasks') { type = isFood ? 'checkin' : isView ? 'photo' : ['photo', 'observation', 'find'][stopIndex % 3] }
-  else if (experienceType === 'rebus') type = 'quiz'
   else { type = isFood ? 'checkin' : isCulture ? 'quiz' : isView ? 'photo' : ['quiz', 'photo', 'observation', 'find'][stopIndex % 4] }
 
   // Build content
@@ -57,19 +120,12 @@ export async function assignChallenge({ poi, stopIndex, experienceType, rebusWor
   } else if (type === 'find') {
     content = { ...FIND[stopIndex % FIND.length](poi.name), place_name: poi.name, question_type: 'find' }
   } else {
-    // quiz — DB first, Claude second, generic fallback
     let quiz = await getQuizFromDB(poi)
     if (!quiz) quiz = await generateQuizClaude(poi, region, anthropicKey)
     if (!quiz) quiz = genericQuiz(poi)
     content = { ...quiz, place_name: poi.name, question_type: 'quiz' }
   }
 
-  // Rebus overlay
-  if (rebusWord && stopIndex < rebusWord.length) {
-    const letter = rebusWord[stopIndex]
-    content.rebus_letter = letter; content.rebus_index = stopIndex + 1; content.rebus_total = rebusWord.length
-    content.rebus_hint = `Písmeno č. ${stopIndex + 1}/${rebusWord.length}: "${letter}"`
-  }
   if (storyNarrative) content.story_intro = storyNarrative
   if (poi.is_partner) { content.is_partner = true; content.partner_discount = poi.partner_discount }
   if (poi.source === 'custom_db' && poi.id) content.custom_poi_id = poi.id

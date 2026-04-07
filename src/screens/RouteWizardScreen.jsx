@@ -5,10 +5,38 @@ import { loadPOICache, getCache } from '../lib/poiCache.js'
 import { haversineDistance } from '../lib/geo.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import { fetchAllStories } from '../lib/storySystem.js'
 import RoutePlannerScreen from './RoutePlannerScreen.jsx'
 
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
 const TOTAL_STEPS = 5
+
+const THEME_LABELS = {
+  absurd:  { label: 'Urban absurdní mystery', emoji: '🕵️' },
+  food:    { label: 'Food & beer quest', emoji: '🍺' },
+  beer:    { label: 'Food & beer quest', emoji: '🍺' },
+  coffee:  { label: 'Food & beer quest', emoji: '☕' },
+  dating:  { label: 'Dating & social', emoji: '💬' },
+  social:  { label: 'Dating & social', emoji: '💬' },
+  office:  { label: 'Office & adult humor', emoji: '💼' },
+  urban:   { label: 'Urban absurdní mystery', emoji: '🕵️' },
+  mystery: { label: 'Urban absurdní mystery', emoji: '🕵️' },
+  tech:    { label: 'Urban absurdní mystery', emoji: '📱' },
+  fitness: { label: 'Dating & social', emoji: '🏃' },
+  animal:  { label: 'Urban absurdní mystery', emoji: '🐾' },
+  diy:     { label: 'Office & adult humor', emoji: '🔧' },
+}
+
+function groupStoriesByTheme(stories) {
+  const groups = {}
+  stories?.forEach(story => {
+    const themeInfo = THEME_LABELS[story.theme] || { label: 'Ostatní', emoji: '📖' }
+    const key = themeInfo.emoji + ' ' + themeInfo.label
+    if (!groups[key]) groups[key] = []
+    groups[key].push(story)
+  })
+  return groups
+}
 
 const ACTIVITIES = [
   { id: 'hiking', icon: '🥾', labelKey: 'wizard.hiking' },
@@ -25,10 +53,31 @@ const POI_CATEGORIES = [
   { id: 'pamatnik', icon: '🏰', label: 'Hrady' },
   { id: 'vyhlidka', icon: '👁', label: 'Vyhlídky' },
   { id: 'studanka', icon: '💧', label: 'Studánky' },
+  { id: 'skalni_utvar', icon: '🪨', label: 'Skály' },
   { id: 'horska_chata', icon: '🏠', label: 'Chaty' },
   { id: 'vinna_sklep', icon: '🍷', label: 'Víno' },
   { id: 'kaplička', icon: '⛪', label: 'Kapličky' },
+  { id: 'mlyny', icon: '⚙️', label: 'Mlýny' },
+  { id: 'restaurace', icon: '🍽', label: 'Restaurace' },
 ]
+
+// Normalize category aliases to canonical category IDs
+function normalizePOICategory(cat) {
+  const aliases = {
+    hrad: 'pamatnik', zamek: 'pamatnik', zámek: 'pamatnik', castle: 'pamatnik', ruins: 'pamatnik', memorial: 'pamatnik', museum: 'pamatnik',
+    kaple: 'kaplička', kaple: 'kaplička', chapel: 'kaplička', church: 'kaplička', kostel: 'kaplička',
+    hospoda: 'minipivovar', pub: 'minipivovar', pivovar: 'minipivovar', brewery: 'minipivovar', biergarten: 'minipivovar',
+    chata: 'horska_chata', alpine_hut: 'horska_chata', chalet: 'horska_chata',
+    spring: 'studanka', waterfall: 'studanka',
+    viewpoint: 'vyhlidka', peak: 'vyhlidka', tower: 'vyhlidka',
+    rock: 'skalni_utvar', cave: 'skalni_utvar', nature_reserve: 'skalni_utvar',
+    winery: 'vinna_sklep',
+    watermill: 'mlyny', windmill: 'mlyny',
+    restaurant: 'restaurace',
+  }
+  if (!cat) return 'other'
+  return aliases[cat] ?? cat
+}
 const POI_ICONS = { minipivovar: '🍺', horska_chata: '🏠', vyhlidka: '👁', studanka: '💧', skalni_utvar: '🪨', pamatnik: '🏛', kaplička: '⛪', mlyny: '⚙️', vinna_sklep: '🍷', restaurace: '🍽' }
 
 export default function RouteWizardScreen({ onRouteGenerated }) {
@@ -64,6 +113,12 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   // Challenge count
   const [challengeCount, setChallengeCount] = useState(3)
 
+  // Story selection (rebus mode)
+  const [selectedStory, setSelectedStory] = useState(null)
+  const [stories, setStories] = useState([])
+  const [storiesLoading, setStoriesLoading] = useState(false)
+  const [showStorySelector, setShowStorySelector] = useState(false)
+
   // Planner
   const [showPlanner, setShowPlanner] = useState(false)
 
@@ -73,7 +128,28 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   const effectiveStartName = startMode === 'custom' && customStartName ? customStartName : (startLocation?.name ?? 'Start')
 
   function next() { setStep((s) => Math.min(s + 1, TOTAL_STEPS)) }
-  function back() { setStep((s) => Math.max(s - 1, 0)) }
+  function back() {
+    // If going back to step 0 from step 1 and rebus was selected, show story selector
+    if (step === 1 && experienceType === 'rebus') { setStep(0); setShowStorySelector(true); return }
+    setStep((s) => Math.max(s - 1, 0))
+  }
+
+  // Load stories eagerly when rebus is selected
+  async function handleSelectRebus() {
+    setExperienceType('rebus')
+    setShowStorySelector(true)
+    if (stories.length === 0) {
+      setStoriesLoading(true)
+      try {
+        const data = await fetchAllStories()
+        setStories(data ?? [])
+      } catch (e) {
+        console.warn('Failed to load stories:', e)
+        setStories([])
+      }
+      setStoriesLoading(false)
+    }
+  }
 
   // GPS
   async function useMyLocation() {
@@ -102,12 +178,14 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     if (step !== 3 || !effectiveStartLat) return
     setPoiSearching(true)
     loadPOICache(effectiveStartLat, effectiveStartLng).then((pois) => {
-      const withDist = (pois ?? []).map((p) => ({
-        ...p, id: p.id, name: p.name, description: p.description, category: p.poi_category, poi_category: p.poi_category,
+      const withDist = (pois ?? []).map((p) => {
+        const normalizedCat = normalizePOICategory(p.poi_category)
+        return {
+        ...p, id: p.id, name: p.name, description: p.description, category: normalizedCat, poi_category: normalizedCat,
         lat: p.gps_lat, lng: p.gps_lng, gps_lat: p.gps_lat, gps_lng: p.gps_lng,
         quality_score: p.quality_score ?? 5, source: 'db',
         distanceKm: haversineDistance([effectiveStartLng, effectiveStartLat], [p.gps_lng, p.gps_lat]) / 1000,
-      })).sort((a, b) => a.distanceKm - b.distanceKm)
+      }}).sort((a, b) => a.distanceKm - b.distanceKm)
       setAllCachedPOIs(withDist)
       setPoiSearching(false)
     })
@@ -123,6 +201,11 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
   // Category counts within radius
   const categoryCounts = allCachedPOIs.filter((p) => p.distanceKm <= poiRadiusKm).reduce((acc, p) => { acc[p.poi_category] = (acc[p.poi_category] ?? 0) + 1; return acc }, {})
+
+  // Reset category filter if selected category has no POIs in current radius
+  useEffect(() => {
+    if (poiCategory !== 'all' && (categoryCounts[poiCategory] ?? 0) === 0) setPoiCategory('all')
+  }, [poiRadiusKm, categoryCounts[poiCategory]])
 
   // Displayed results (filtered + Mapy.com supplement for text search)
   function handlePoiSearch(query) {
@@ -174,6 +257,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
         isLoop={isLoop}
         distanceKm={10}
         selectedPOIs={selectedPOIs}
+        selectedStory={selectedStory}
         onBack={() => setShowPlanner(false)}
         onStartRoute={onRouteGenerated}
       />
@@ -183,6 +267,78 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   // ── Render wizard steps ───────────────────────────────────
 
   return (
+    <>
+    {/* ── Story selector overlay (rendered on top, not early return) ── */}
+    {showStorySelector && (
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#0a0f0a', zIndex: 9999, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', position: 'sticky', top: 0, background: '#0a0f0a', zIndex: 10 }}>
+          <button onClick={() => { setShowStorySelector(false); setSelectedStory(null) }} style={{
+            width: 40, height: 40, borderRadius: '50%', background: '#1a231a', border: 'none',
+            fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff',
+          }}>←</button>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#ffffff' }}>Vyber příběh pro rébus</div>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>Hádanky na zastávkách budou z tohoto příběhu</div>
+          </div>
+        </div>
+
+        {/* Loading */}
+        {storiesLoading && (
+          <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Načítám příběhy...</div>
+        )}
+
+        {/* Stories list */}
+        {!storiesLoading && (
+          <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {stories.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '30px 0', color: '#94a3b8' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>📖</div>
+                <div style={{ fontSize: 15, marginBottom: 8 }}>Žádné příběhy v databázi</div>
+                <div style={{ fontSize: 12 }}>Hádanky budou generovány automaticky</div>
+              </div>
+            ) : (
+              Object.entries(groupStoriesByTheme(stories)).map(([groupName, groupStories]) => (
+                <div key={groupName} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', marginBottom: 10 }}>
+                    {groupName}
+                  </div>
+                  {groupStories.map(story => {
+                    const riddleCount = story.narrative_template?.stops?.length || 0
+                    return (
+                      <div key={story.id} onClick={() => { setSelectedStory(story); setShowStorySelector(false); setStep(1) }} style={{
+                        display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, cursor: 'pointer',
+                        border: '1px solid rgba(255,255,255,0.08)', background: '#111811', marginBottom: 8,
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 15, fontWeight: 600, color: '#ffffff', marginBottom: 3 }}>{story.title_cs}</div>
+                          {story.description_cs && <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.4 }}>{story.description_cs}</div>}
+                          {riddleCount > 0 ? (
+                            <div style={{ fontSize: 11, color: '#22c55e', marginTop: 5, fontWeight: 600 }}>✓ {riddleCount} připravených hádanek</div>
+                          ) : (
+                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>Hádanky generovány automaticky</div>
+                          )}
+                        </div>
+                        <span style={{ color: '#94a3b8', fontSize: 18 }}>›</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))
+            )}
+
+            {/* Skip story */}
+            <div onClick={() => { setSelectedStory(null); setShowStorySelector(false); setStep(1) }} style={{
+              textAlign: 'center', padding: 16, color: '#94a3b8', fontSize: 14, cursor: 'pointer',
+              borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8,
+            }}>
+              Pokračovat bez příběhu →
+            </div>
+          </div>
+        )}
+      </div>
+    )}
+
     <div className="wizard-screen">
       {/* Header with dots */}
       <div className="wiz-header">
@@ -206,7 +362,10 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
               { type: 'rebus', emoji: '🔤', titleKey: 'wizard.expRebus', descKey: 'wizard.expRebusDesc' },
               { type: 'mix', emoji: '🎲', titleKey: 'wizard.expMix', descKey: 'wizard.expMixDesc' },
             ].map((o) => (
-              <div key={o.type} className={`wiz-exp-card ${experienceType === o.type ? 'selected' : ''}`} onClick={() => { setExperienceType(o.type); next() }}>
+              <div key={o.type} className={`wiz-exp-card ${experienceType === o.type ? 'selected' : ''}`} onClick={() => {
+                if (o.type === 'rebus') handleSelectRebus()
+                else { setExperienceType(o.type); next() }
+              }}>
                 <span className="wiz-exp-icon">{o.emoji}</span>
                 <div><div className="wiz-exp-title">{t(o.titleKey)}</div><div className="wiz-exp-desc">{t(o.descKey)}</div></div>
               </div>
@@ -281,17 +440,24 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
             {/* Category chips with counts */}
             <div style={{ display: 'flex', gap: 6, overflowX: 'auto', padding: '8px 0', scrollbarWidth: 'none' }}>
-              {POI_CATEGORIES.filter((c) => c.id === '' || (categoryCounts[c.id] ?? 0) > 0).map((c) => (
-                <button key={c.id} onClick={() => setPoiCategory(c.id || 'all')} style={{
-                  flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 16,
-                  border: poiCategory === (c.id || 'all') ? '2px solid var(--accent)' : '1px solid var(--border)',
-                  background: poiCategory === (c.id || 'all') ? 'var(--accent-dim)' : 'var(--bg-raised)',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text)', transition: 'all 120ms',
-                }}>
-                  <span style={{ fontSize: 14 }}>{c.icon}</span> {c.label}
-                  {c.id && categoryCounts[c.id] > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-card)', borderRadius: 8, padding: '0 5px' }}>{categoryCounts[c.id]}</span>}
-                </button>
-              ))}
+              {POI_CATEGORIES.map((c) => {
+                const catKey = c.id || 'all'
+                const count = c.id ? (categoryCounts[c.id] ?? 0) : Object.values(categoryCounts).reduce((s, v) => s + v, 0)
+                const isEmpty = c.id && count === 0
+                const isActive = poiCategory === catKey
+                return (
+                  <button key={c.id} onClick={() => !isEmpty && setPoiCategory(catKey)} style={{
+                    flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 16,
+                    border: isActive ? '2px solid var(--accent)' : '1px solid var(--border)',
+                    background: isActive ? 'var(--accent-dim)' : 'var(--bg-raised)',
+                    cursor: isEmpty ? 'default' : 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--text)',
+                    transition: 'all 120ms', opacity: isEmpty ? 0.35 : 1,
+                  }}>
+                    <span style={{ fontSize: 14 }}>{c.icon}</span> {c.label}
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-card)', borderRadius: 8, padding: '0 5px' }}>{count}</span>
+                  </button>
+                )
+              })}
             </div>
 
             {/* Radius slider */}
@@ -399,5 +565,6 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
         )}
       </div>
     </div>
+    </>
   )
 }

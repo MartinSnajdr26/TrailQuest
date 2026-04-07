@@ -13,7 +13,7 @@ import ElevationProfile from '../components/ElevationProfile.jsx'
 
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
 
-export default function RoutePlannerScreen({ activity, experienceType, challengeCount, startLat, startLng, startName, isLoop, distanceKm, selectedPOIs: initialPOIs, onBack, onStartRoute }) {
+export default function RoutePlannerScreen({ activity, experienceType, challengeCount, startLat, startLng, startName, isLoop, distanceKm, selectedPOIs: initialPOIs, selectedStory, onBack, onStartRoute }) {
   const { t } = useTranslation()
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -218,7 +218,7 @@ export default function RoutePlannerScreen({ activity, experienceType, challenge
         startLat: wps[0]?.lat ?? sLat, startLng: wps[0]?.lng ?? sLng, startName, isLoop,
         distanceKm: parseFloat(routeStats?.distanceKm ?? sliderKm), challengeCount,
         manualPOIs: pois, precomputedGeometry: routeGeometry, precomputedDistance: parseFloat(routeStats?.distanceKm ?? 10) * 1000,
-        anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
+        selectedStory, anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
       })
       clearPOICache()
       onStartRoute(result)

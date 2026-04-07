@@ -2205,3 +2205,31 @@ h1, h2, h3 { font-weight: 600; font-family: 'Inter', system-ui, sans-serif; }
   width: 20px; height: 20px; border-radius: 50%;
   background: var(--accent); border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;
 }
+
+/* ── Rebus animations ──────────────────────────────────────────────────── */
+.rebus-letter-reveal {
+  animation: letterDrop 0.6s ease-out;
+}
+@keyframes letterDrop {
+  0%   { transform: translateY(-40px) scale(0.5); opacity: 0; }
+  60%  { transform: translateY(4px) scale(1.2); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.rebus-shake {
+  animation: rebusShake 0.4s ease-in-out;
+}
+@keyframes rebusShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+.confetti-piece {
+  position: absolute; top: -10px; width: 8px; height: 12px; border-radius: 2px;
+  animation: confettiFall 2s ease-in forwards;
+}
+@keyframes confettiFall {
+  0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(500px) rotate(720deg); opacity: 0; }
+}

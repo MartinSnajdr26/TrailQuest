@@ -14,7 +14,7 @@ export async function generateSmartRoute({
   mode, activity, experienceType, startLat, startLng, startName, endLat, endLng,
   isLoop, distanceKm, challengeCount, variantTheme, manualPOIs,
   dryRun = false, preGeneratedData, precomputedGeometry, precomputedDistance,
-  variantSeed = 0, usedPOINames = [],
+  variantSeed = 0, usedPOINames = [], selectedStory,
   anthropicKey, mapyczApiKey, orsApiKey, onProgress, userId,
 }) {
   // Fast path: use precomputed geometry (from interactive planner)
@@ -24,13 +24,13 @@ export async function generateSmartRoute({
     const pois = manualPOIs?.length > 0 ? manualPOIs : []
     const points = pois.map((p, i) => ({ ...p, ...placeChallengeTrigger(routeCoords, Number(p.gps_lat ?? p.lat), Number(p.gps_lng ?? p.lng)), stopIndex: i }))
     let rebusWord = experienceType === 'rebus' ? generateRebus(challengeCount) : null
-    const story = await selectStory(startName)
+    const story = selectedStory ?? await selectStory(startName)
     onProgress?.('🧩 Připravuji výzvy...')
     const challenges = await Promise.all(points.map((pt, i) =>
-      assignChallenge({ poi: pt, stopIndex: i, experienceType, rebusWord, storyNarrative: getStopNarrative(story, i), region: startName, anthropicKey })
+      assignChallenge({ poi: pt, stopIndex: i, experienceType, rebusWord, story, storyNarrative: getStopNarrative(story, i), region: startName, anthropicKey })
         .then((ch) => ({ ...ch, sequence_order: i + 1, gps_lat: pt.trigger_lat, gps_lng: pt.trigger_lng, trigger_radius_m: pt.trigger_radius_m, poi_name: pt.name, language: 'cs' }))
     ))
-    if (rebusWord) challenges.push({ sequence_order: challengeCount + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord), gps_lat: startLat, gps_lng: startLng, trigger_radius_m: 100, poi_name: 'Finále', language: 'cs' })
+    if (rebusWord) challenges.push({ sequence_order: challengeCount + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord, story), gps_lat: startLat, gps_lng: startLng, trigger_radius_m: 100, poi_name: 'Finále', language: 'cs' })
     const routeKm = (precomputedDistance ?? 0) / 1000
     const acts = { hiking: 'Turistika', cycling: 'Kolo', mtb: 'MTB', skitouring: 'Skialpy', crosscountry: 'Běžky' }
     const routeData = { name: `${acts[activity] ?? 'Trasa'} z ${startName}`, description: `${pois.length} zastávek, ${routeKm.toFixed(1)} km`, activity_type: activity, distance_km: routeKm, elevation_gain_m: 0, duration_sec: 0, region: startName ?? '', is_loop: isLoop, start_lat: startLat, start_lng: startLng }
@@ -38,11 +38,13 @@ export async function generateSmartRoute({
     const uid = userId ?? (await supabase.auth.getUser()).data.user?.id
     const { data: saved, error } = await supabase.from('routes').insert({ ...routeData, gpx_data: JSON.stringify(precomputedGeometry), created_by: uid }).select().single()
     if (error) throw new Error('Save: ' + error.message)
-    const ins = challenges.map((c) => ({ route_id: saved.id, sequence_order: c.sequence_order, type: c.type, title: c.poi_name, description: c.content_json?.task, lat: c.gps_lat, lng: c.gps_lng }))
-    await supabase.from('challenges').insert(ins)
+    const dbRows = challenges.map((c) => ({ route_id: saved.id, sequence_order: c.sequence_order, type: c.type, title: c.poi_name, description: c.content_json?.task ?? c.content_json?.riddle, lat: c.gps_lat, lng: c.gps_lng }))
+    await supabase.from('challenges').insert(dbRows)
+    // Return full challenges with content_json (not stripped DB rows)
+    const fullChallenges = challenges.map((c) => ({ ...c, lat: c.gps_lat, lng: c.gps_lng }))
     clearPOICache()
     onProgress?.('✅')
-    return { route: saved, challenges: ins, routeGeometry: precomputedGeometry, distance: precomputedDistance, isDryRun: false }
+    return { route: saved, challenges: fullChallenges, routeGeometry: precomputedGeometry, distance: precomputedDistance, isDryRun: false }
   }
 
   // Fast path: save pre-generated data
@@ -55,15 +57,16 @@ export async function generateSmartRoute({
       gpx_data: typeof geo === 'string' ? geo : JSON.stringify(geo), created_by: uid,
     }).select().single()
     if (error) throw new Error('Save failed: ' + error.message)
-    const ins = chs.map((c, i) => ({
+    const dbRows = chs.map((c, i) => ({
       route_id: saved.id, sequence_order: i + 1, type: c.type, title: c.poi_name,
-      description: c.content_json?.task, question: c.content_json?.question ?? c.content_json?.task,
+      description: c.content_json?.task ?? c.content_json?.riddle, question: c.content_json?.question ?? c.content_json?.task,
       options: c.content_json?.options ? JSON.stringify(c.content_json.options) : null,
       correct_answer: c.content_json?.correct_answer ?? null, prompt: c.content_json?.alternative ?? null,
       lat: c.gps_lat ?? c.trigger_lat, lng: c.gps_lng ?? c.trigger_lng,
     }))
-    await supabase.from('challenges').insert(ins)
-    return { route: saved, challenges: ins, routeGeometry: geo, distance: (r.distance_km ?? 0) * 1000, duration: r.duration_sec ?? 0, isDryRun: false }
+    await supabase.from('challenges').insert(dbRows)
+    const fullChallenges = chs.map((c) => ({ ...c, lat: c.gps_lat ?? c.trigger_lat, lng: c.gps_lng ?? c.trigger_lng }))
+    return { route: saved, challenges: fullChallenges, routeGeometry: geo, distance: (r.distance_km ?? 0) * 1000, duration: r.duration_sec ?? 0, isDryRun: false }
   }
 
   // 1. Load POIs
@@ -129,19 +132,19 @@ export async function generateSmartRoute({
   let rebusWord = experienceType === 'rebus' ? generateRebus(challengeCount) : null
 
   // 9. Story
-  const story = await selectStory(startName)
+  const story = selectedStory ?? await selectStory(startName)
 
   // 10. Challenges
   onProgress?.('🧩 Připravuji výzvy...')
   const challenges = await Promise.all(points.map((p, i) =>
-    assignChallenge({ poi: p, stopIndex: i, experienceType, rebusWord, storyNarrative: getStopNarrative(story, i), region: startName, anthropicKey })
+    assignChallenge({ poi: p, stopIndex: i, experienceType, rebusWord, story, storyNarrative: getStopNarrative(story, i), region: startName, anthropicKey })
       .then((ch) => ({ ...ch, sequence_order: i + 1, gps_lat: p.trigger_lat, gps_lng: p.trigger_lng, trigger_radius_m: p.trigger_radius_m, poi_lat: p.poi_lat, poi_lng: p.poi_lng, poi_name: p.name, language: 'cs' }))
   ))
 
   // Rebus finale
   if (rebusWord) {
     const finLoc = isLoop ? { lat: startLat, lng: startLng } : { lat: Number(selected[selected.length - 1]?.gps_lat ?? startLat), lng: Number(selected[selected.length - 1]?.gps_lng ?? startLng) }
-    challenges.push({ sequence_order: challengeCount + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord), gps_lat: finLoc.lat, gps_lng: finLoc.lng, trigger_radius_m: 100, poi_name: 'Finále rébusu', language: 'cs' })
+    challenges.push({ sequence_order: challengeCount + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord, story), gps_lat: finLoc.lat, gps_lng: finLoc.lng, trigger_radius_m: 100, poi_name: 'Finále rébusu', language: 'cs' })
   }
 
   // 11. Segments
@@ -156,7 +159,8 @@ export async function generateSmartRoute({
 
   if (dryRun) {
     onProgress?.('✅ Trasa připravena!')
-    return { route: { ...routeData, id: 'preview_' + Date.now() }, challenges, routeGeometry: routeResult.geometry, routeSegments: segments, distance: routeResult.distance, duration: routeResult.duration, ascent: routeResult.ascent, story, rebusWord, isDryRun: true }
+    const dryRunChallenges = challenges.map((c) => ({ ...c, lat: c.gps_lat, lng: c.gps_lng }))
+    return { route: { ...routeData, id: 'preview_' + Date.now() }, challenges: dryRunChallenges, routeGeometry: routeResult.geometry, routeSegments: segments, distance: routeResult.distance, duration: routeResult.duration, ascent: routeResult.ascent, story, rebusWord, isDryRun: true }
   }
 
   // Save
@@ -165,9 +169,11 @@ export async function generateSmartRoute({
   const uid = userId ?? (await supabase.auth.getUser()).data.user?.id
   const { data: saved, error } = await supabase.from('routes').insert({ ...routeData, gpx_data: JSON.stringify(routeResult.geometry), created_by: uid }).select().single()
   if (error) throw new Error('Save failed: ' + error.message)
-  const ins = challenges.map((c) => ({ ...c, route_id: saved.id, content_json: undefined }))
-  await supabase.from('challenges').insert(ins.map((c) => ({ route_id: c.route_id, sequence_order: c.sequence_order, type: c.type, title: c.poi_name, description: c.content_json?.task ?? challenges.find((x) => x.sequence_order === c.sequence_order)?.content_json?.task, lat: c.gps_lat, lng: c.gps_lng })))
+  const dbRows = challenges.map((c) => ({ route_id: saved.id, sequence_order: c.sequence_order, type: c.type, title: c.poi_name, description: c.content_json?.task ?? c.content_json?.riddle, lat: c.gps_lat, lng: c.gps_lng }))
+  await supabase.from('challenges').insert(dbRows)
+  // Return full challenges with lat/lng added for ActiveHikeScreen
+  const fullChallenges = challenges.map((c) => ({ ...c, lat: c.gps_lat, lng: c.gps_lng }))
 
   onProgress?.('✅ Trasa připravena!')
-  return { route: saved, challenges, routeGeometry: routeResult.geometry, routeSegments: segments, distance: routeResult.distance, duration: routeResult.duration, ascent: routeResult.ascent, story, rebusWord, isDryRun: false }
+  return { route: saved, challenges: fullChallenges, routeGeometry: routeResult.geometry, routeSegments: segments, distance: routeResult.distance, duration: routeResult.duration, ascent: routeResult.ascent, story, rebusWord, isDryRun: false }
 }

@@ -15,6 +15,7 @@ import { fetchCurrentWeather, getWeatherEmoji } from '../lib/weather.js'
 import { audioGuide } from '../lib/audioGuide.js'
 import { recordPOIVisit } from '../lib/routeGenerator.js'
 import ChallengeCard from '../components/ChallengeCard.jsx'
+import RebusFinaleCard from '../components/RebusFinaleCard.jsx'
 
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
 
@@ -136,6 +137,7 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
   const [hudCollapsed, setHudCollapsed] = useState(false)
 
   const markerEls = useRef(new Map())
+  const rebusStatsRef = useRef({ hintsUsed: 0, skipped: 0, correct: 0, total: 0 })
 
   // Weather + audio
   const [weather, setWeather] = useState(null)
@@ -301,9 +303,16 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
     if (mapRef.current && prevPosRef.current) mapRef.current.flyTo({ center: prevPosRef.current, zoom: 15, duration: 400 })
   }, [])
 
-  async function handleChallengeComplete(challenge, answer) {
+  async function handleChallengeComplete(challenge, answer, isCorrect, rebusMeta) {
     const key = challenge.id ?? `ch-${sortedChallenges.indexOf(challenge)}`
     completedIdsRef.current.add(key); setActiveChallenge(null); setCompletedCount((p) => p + 1)
+    // Track rebus stats
+    if (challenge.content_json?.story_riddle || challenge.type === 'rebus') {
+      rebusStatsRef.current.total++
+      if (rebusMeta?.skipped) rebusStatsRef.current.skipped++
+      else rebusStatsRef.current.correct++
+      rebusStatsRef.current.hintsUsed += rebusMeta?.hintsUsed ?? 0
+    }
     // Persist progress to parent (→ localStorage)
     onChallengeCompleted?.(key)
     const funFact = challenge.content_json?.fun_fact ?? challenge.fun_fact
@@ -396,7 +405,7 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
           <span>🎉 {t('hike.routeDone')}</span>
           <button className="hike-complete-btn" onClick={() => {
             audioGuide.speak(`Gratuluju! Dokončil jsi trasu. Ušels ${walkedKm.toFixed(1)} kilometrů.`)
-            onFinish({ completed: true, completedCount, totalChallenges: sortedChallenges.length, startedAt, finishedAt: new Date().toISOString(), walkedKm, weather })
+            onFinish({ completed: true, completedCount, totalChallenges: sortedChallenges.length, startedAt, finishedAt: new Date().toISOString(), walkedKm, weather, rebusStats: rebusStatsRef.current.total > 0 ? rebusStatsRef.current : null })
           }}>
             {t('hike.results')}
           </button>
@@ -407,7 +416,11 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
       {activeChallenge && (
         <>
           <div className="hike-dim-overlay" />
-          <ChallengeCard challenge={activeChallenge} challengeIndex={sortedChallenges.indexOf(activeChallenge) + 1} totalChallenges={sortedChallenges.length} onComplete={handleChallengeComplete} />
+          {activeChallenge.type === 'rebus_finale' ? (
+            <RebusFinaleCard challenge={activeChallenge} onComplete={handleChallengeComplete} />
+          ) : (
+            <ChallengeCard challenge={activeChallenge} challengeIndex={sortedChallenges.indexOf(activeChallenge) + 1} totalChallenges={sortedChallenges.length} onComplete={handleChallengeComplete} />
+          )}
         </>
       )}
 

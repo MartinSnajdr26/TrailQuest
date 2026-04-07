@@ -57,13 +57,14 @@ export function splitRouteIntoSegments(allCoords, challenges) {
   if (!allCoords || allCoords.length < 2) return allCoords ? [allCoords] : []
   if (!challenges || challenges.length === 0) return [allCoords]
 
-  // Only challenges with valid GPS coords
+  // Only challenges with valid GPS coords (exclude rebus_finale — it sits at the start point and breaks splitting)
   const valid = challenges.filter(
     (ch) =>
       ch.lat != null &&
       ch.lng != null &&
       !isNaN(Number(ch.lat)) &&
-      !isNaN(Number(ch.lng))
+      !isNaN(Number(ch.lng)) &&
+      ch.type !== 'rebus_finale'
   )
   if (valid.length === 0) return [allCoords]
 

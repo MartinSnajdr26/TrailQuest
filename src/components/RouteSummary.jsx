@@ -137,6 +137,43 @@ export default function RouteSummary({ route, hikeResult, earnedBadges, weather,
           )}
         </div>
 
+        {/* Rebus stats */}
+        {hikeResult?.rebusStats && (() => {
+          const rs = hikeResult.rebusStats
+          const pct = rs.total > 0 ? rs.correct / rs.total : 0
+          const stars = pct >= 1 && rs.hintsUsed === 0 ? 5 : pct >= 1 ? 4 : pct >= 0.8 ? 3 : pct >= 0.6 ? 2 : 1
+          const labels = ['', 'Příště lépe!', 'Slušný výkon', 'Dobrý detektiv', 'Výborně!', 'Génius!']
+          return (
+            <div className="summary-section">
+              <h3 className="summary-section-title">🔤 Rébus</h3>
+              <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 8 }}>
+                  <span>Hádanky vyřešeny</span>
+                  <span style={{ fontWeight: 700 }}>{rs.correct}/{rs.total}</span>
+                </div>
+                {rs.skipped > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 8 }}>
+                    <span>Přeskočeno</span>
+                    <span style={{ fontWeight: 700, color: '#f87171' }}>{rs.skipped}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 12 }}>
+                  <span>Nápovědy použity</span>
+                  <span style={{ fontWeight: 700 }}>{rs.hintsUsed}</span>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, letterSpacing: 2 }}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <span key={i} style={{ color: i < stars ? '#ffd700' : 'var(--text-muted)' }}>★</span>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{labels[stars]}</div>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Rating */}
         <div className="summary-section">
           <h3 className="summary-section-title">{t('summary.rateRoute')}</h3>

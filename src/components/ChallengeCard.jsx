@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { checkCountAnswer } from '../lib/challenges.js'
 
-const TYPE_LABELS = { quiz: 'Kvíz', count: 'Spočítej', observe: 'Pozoruj', observation: 'Pozoruj', photo: 'Foto', checkin: 'Stanoviště', find: 'Najdi' }
-const TYPE_ICONS = { quiz: '🧠', count: '🔢', observe: '👁', observation: '🔍', photo: '📷', checkin: '📍', find: '🔍' }
+const TYPE_LABELS = { quiz: 'Kvíz', count: 'Spočítej', observe: 'Pozoruj', observation: 'Pozoruj', photo: 'Foto', checkin: 'Stanoviště', find: 'Najdi', rebus: 'Rébus' }
+const TYPE_ICONS = { quiz: '🧠', count: '🔢', observe: '👁', observation: '🔍', photo: '📷', checkin: '📍', find: '🔍', rebus: '🔤' }
 
 export default function ChallengeCard({ challenge, challengeIndex, totalChallenges, onComplete }) {
   const { t } = useTranslation()
@@ -11,17 +11,26 @@ export default function ChallengeCard({ challenge, challengeIndex, totalChalleng
   const [answer, setAnswer] = useState('')
   const [selectedOption, setSelectedOption] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
-  const [quizResult, setQuizResult] = useState(null) // null | 'correct' | 'wrong'
+  const [quizResult, setQuizResult] = useState(null)
   const [countResult, setCountResult] = useState(null)
   const [submitted, setSubmitted] = useState(false)
   const [showFunFact, setShowFunFact] = useState(false)
   const photoUrlRef = useRef(null)
 
+  // Rebus-specific state
+  const [rebusPhase, setRebusPhase] = useState('atmosphere') // 'atmosphere' | 'riddle' | 'result'
+  const [rebusAnswer, setRebusAnswer] = useState(null)
+  const [rebusCorrect, setRebusCorrect] = useState(null)
+  const [showHint, setShowHint] = useState(false)
+  const [hintLevel, setHintLevel] = useState(0)
+  const [skipConfirm, setSkipConfirm] = useState(false)
+  const [letterRevealed, setLetterRevealed] = useState(false)
+
   useEffect(() => { const t = setTimeout(() => setVisible(true), 16); return () => clearTimeout(t) }, [])
   useEffect(() => { return () => { if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current) } }, [])
 
-  // Determine the effective question type
   const qType = challenge.question_type ?? challenge.content_json?.question_type ?? challenge.type ?? 'observation'
+  const isStoryRebus = qType === 'rebus' && challenge.content_json?.story_riddle
 
   const options = useMemo(() => {
     const raw = challenge.options ?? challenge.content_json?.options
@@ -35,6 +44,13 @@ export default function ChallengeCard({ challenge, challengeIndex, totalChalleng
   const placeName = challenge.content_json?.place_name ?? challenge.title ?? ''
   const correctAnswer = challenge.correct_answer ?? challenge.content_json?.correct_answer ?? ''
 
+  // Rebus data
+  const cj = challenge.content_json ?? {}
+  const rebusLetter = cj.rebus_letter
+  const rebusIndex = cj.rebus_index
+  const rebusTotal = cj.rebus_total
+  const rebusProgress = cj.rebus_progress ?? ''
+
   function handlePhotoCapture(e) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -43,6 +59,214 @@ export default function ChallengeCard({ challenge, challengeIndex, totalChalleng
     photoUrlRef.current = url
     setPhotoPreview(url)
   }
+
+  // ── Rebus handlers ─────────────────────────────────────
+  function handleRebusAnswer(opt) {
+    if (rebusAnswer !== null && rebusCorrect) return // already answered correctly
+    setRebusAnswer(opt)
+    const correct = opt.startsWith(cj.correct_answer + ':') || opt.split(':')[0].trim() === cj.correct_answer
+    setRebusCorrect(correct)
+    if (correct) {
+      setTimeout(() => { setRebusPhase('result'); setLetterRevealed(false); setTimeout(() => setLetterRevealed(true), 300) }, 600)
+    }
+  }
+
+  function handleRebusRetry() {
+    setRebusAnswer(null)
+    setRebusCorrect(null)
+  }
+
+  function handleRebusHint() {
+    setShowHint(true)
+    setHintLevel(prev => Math.min(prev + 1, 3))
+  }
+
+  function handleRebusSkip() {
+    if (!skipConfirm) { setSkipConfirm(true); return }
+    // Confirm skip — complete with '?' letter
+    onComplete(challenge, '?_skipped', false, { skipped: true, hintsUsed: hintLevel })
+  }
+
+  function handleRebusContinue() {
+    onComplete(challenge, rebusLetter, true, { skipped: false, hintsUsed: hintLevel })
+  }
+
+  function getCurrentHint() {
+    if (hintLevel >= 3) return 'Nápovědy vyčerpány. Zkus to nebo přeskoč.'
+    if (hintLevel === 1) return cj.hint_level_1 || 'Přemýšlej o tom jinak.'
+    if (hintLevel === 2) return cj.hint_level_2 || 'Zkus vyloučit špatné odpovědi.'
+    if (hintLevel === 3) return cj.hint_level_3 || 'Odpověď se skrývá na místě.'
+    return ''
+  }
+
+  // ── Story rebus render ─────────────────────────────────
+  if (isStoryRebus) {
+    return (
+      <div className="challenge-overlay">
+        <div className={`challenge-card ${visible ? 'challenge-card--visible' : ''}`}>
+          <div className="challenge-card-handle" />
+
+          {/* Header */}
+          <div className="challenge-card-header">
+            <div className="challenge-type-badge">
+              <span className="challenge-type-icon">🔤</span>
+              <span className="challenge-type-label">Rébus</span>
+            </div>
+            <span className="challenge-counter">{challengeIndex} / {totalChallenges}</span>
+          </div>
+
+          {/* ── PHASE: Atmosphere ──────────────── */}
+          {rebusPhase === 'atmosphere' && (
+            <div style={{ padding: '8px 0' }}>
+              {cj.story_title && (
+                <div style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600, marginBottom: 8 }}>
+                  📖 {cj.story_title}
+                </div>
+              )}
+              {placeName && <h2 className="challenge-title">{placeName}</h2>}
+              {cj.story_atmosphere && (
+                <p style={{ fontSize: 14, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.6, margin: '12px 0' }}>
+                  "{cj.story_atmosphere}"
+                </p>
+              )}
+              {/* Rebus progress bar */}
+              <div style={{ background: 'var(--bg-raised)', borderRadius: 12, padding: '10px 14px', margin: '12px 0' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>🔤 Rébus:</div>
+                <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: '0.15em', fontFamily: 'monospace' }}>
+                  {rebusProgress}
+                </div>
+              </div>
+              <button className="btn-primary challenge-submit-btn" onClick={() => setRebusPhase('riddle')}>
+                Zobrazit hádanku →
+              </button>
+            </div>
+          )}
+
+          {/* ── PHASE: Riddle ─────────────────── */}
+          {rebusPhase === 'riddle' && (
+            <div style={{ padding: '8px 0' }}>
+              <div style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600, marginBottom: 8 }}>🧩 Hádanka</div>
+              <p style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.5, margin: '8px 0 16px' }}>
+                "{cj.riddle}"
+              </p>
+
+              {/* Answer options grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                {options.map(opt => {
+                  const isSelected = rebusAnswer === opt
+                  const optKey = opt.split(':')[0].trim()
+                  const isCorrectOpt = optKey === cj.correct_answer
+                  let borderColor = 'var(--border)'
+                  let bg = 'var(--bg-raised)'
+                  if (isSelected && rebusCorrect === true) { borderColor = 'var(--accent)'; bg = 'var(--accent-dim)' }
+                  else if (isSelected && rebusCorrect === false) { borderColor = '#f87171'; bg = 'rgba(248,113,113,0.1)' }
+                  // After wrong answer, highlight correct one
+                  else if (rebusAnswer && rebusCorrect === false && isCorrectOpt) { borderColor = 'var(--accent)'; bg = 'var(--accent-dim)' }
+                  return (
+                    <button key={opt} onClick={() => handleRebusAnswer(opt)} disabled={rebusAnswer !== null} style={{
+                      padding: '14px 8px', borderRadius: 12, border: `1.5px solid ${borderColor}`, background: bg,
+                      color: 'var(--text-primary)', fontSize: 14, fontWeight: 500, cursor: rebusAnswer ? 'default' : 'pointer',
+                      transition: 'all 150ms', textAlign: 'center',
+                    }}>
+                      {opt}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Wrong answer feedback */}
+              {rebusAnswer && rebusCorrect === false && (
+                <div style={{ textAlign: 'center', margin: '8px 0' }}>
+                  <p style={{ fontSize: 14, color: '#f87171', fontWeight: 500, marginBottom: 10 }}>
+                    ❌ {cj.wrong_answer_text}
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    <button onClick={handleRebusRetry} style={{
+                      padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)',
+                      color: 'var(--text)', fontSize: 13, cursor: 'pointer',
+                    }}>🔄 Zkusit znovu</button>
+                    <button onClick={handleRebusHint} disabled={hintLevel >= 3} style={{
+                      padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)',
+                      color: 'var(--text)', fontSize: 13, cursor: hintLevel >= 3 ? 'default' : 'pointer', opacity: hintLevel >= 3 ? 0.4 : 1,
+                    }}>💡 Nápověda</button>
+                    <button onClick={handleRebusSkip} style={{
+                      padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)',
+                      color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
+                    }}>⏭ {skipConfirm ? 'Potvrdit přeskočení' : 'Přeskočit'}</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Skip confirm dialog */}
+              {skipConfirm && rebusCorrect !== false && (
+                <div style={{ textAlign: 'center', margin: '12px 0', padding: 12, background: 'var(--bg-raised)', borderRadius: 12 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>Opravdu přeskočit? Získáš písmeno '?' místo správného.</p>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                    <button onClick={handleRebusSkip} style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: '#f87171', color: '#fff', fontSize: 13, cursor: 'pointer' }}>Ano, přeskočit</button>
+                    <button onClick={() => setSkipConfirm(false)} style={{ padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>Ne, zkusím dál</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Hint display */}
+              {showHint && hintLevel > 0 && (
+                <div style={{ background: 'var(--accent-dim)', borderRadius: 10, padding: '10px 14px', margin: '10px 0', borderLeft: '3px solid var(--accent)' }}>
+                  <span style={{ fontSize: 13 }}>💡 {getCurrentHint()}</span>
+                </div>
+              )}
+
+              {/* Bottom actions (when no answer yet) */}
+              {!rebusAnswer && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                  <button onClick={handleRebusHint} disabled={hintLevel >= 3} style={{
+                    padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)',
+                    color: 'var(--text)', fontSize: 13, cursor: hintLevel >= 3 ? 'default' : 'pointer', opacity: hintLevel >= 3 ? 0.4 : 1,
+                  }}>💡 Nápověda ({hintLevel}/3)</button>
+                  <button onClick={handleRebusSkip} style={{
+                    padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)',
+                    color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
+                  }}>⏭ Přeskočit</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── PHASE: Result (correct) ───────── */}
+          {rebusPhase === 'result' && (
+            <div style={{ padding: '8px 0', textAlign: 'center' }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Správně!</h3>
+              <p style={{ fontSize: 14, color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: 16 }}>
+                "{cj.correct_answer_text}"
+              </p>
+
+              {/* Letter reveal */}
+              <div style={{ background: 'var(--bg-raised)', borderRadius: 16, padding: '20px', margin: '12px auto', maxWidth: 220 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>Získáváš písmeno:</div>
+                <div className={letterRevealed ? 'rebus-letter-reveal' : ''} style={{
+                  fontSize: 48, fontWeight: 800, color: 'var(--accent)', fontFamily: 'monospace',
+                  opacity: letterRevealed ? 1 : 0, transition: 'opacity 0.3s',
+                }}>
+                  {rebusLetter}
+                </div>
+              </div>
+
+              {/* Updated progress */}
+              <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.15em', fontFamily: 'monospace', margin: '12px 0' }}>
+                Rébus: {rebusProgress ? rebusProgress.split('').map((c, i) => i === (rebusIndex - 1) * 2 ? rebusLetter : c).join('') : ''}
+              </div>
+
+              <button className="btn-primary challenge-submit-btn" onClick={handleRebusContinue}>
+                Pokračovat →
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Standard challenge rendering (non-rebus) ──────────
 
   function handleSubmit() {
     switch (qType) {
@@ -61,7 +285,7 @@ export default function ChallengeCard({ challenge, challengeIndex, totalChalleng
         setCountResult(isCorrect ? 'correct' : 'wrong')
         setShowFunFact(true)
         setSubmitted(true)
-        return // don't auto-complete, user clicks "Pokračovat"
+        return
       }
       case 'observe':
       case 'observation':

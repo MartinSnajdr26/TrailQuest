@@ -11,7 +11,21 @@ export async function selectStory(region) {
   } catch { return null }
 }
 
+export async function fetchAllStories() {
+  try {
+    const { data } = await supabase.from('route_stories')
+      .select('id, title_cs, title_en, description_cs, theme, narrative_template')
+      .eq('is_active', true)
+      .order('title_cs')
+    return data ?? []
+  } catch { return [] }
+}
+
 export function getStopNarrative(story, idx) {
+  // New format: narrative_template.stops[idx].atmosphere
+  const stops = story?.narrative_template?.stops
+  if (stops?.length) return stops[idx % stops.length]?.atmosphere ?? null
+  // Legacy format: stop_prompts
   const prompts = story?.narrative_template?.stop_prompts
   return prompts?.length ? prompts[idx % prompts.length] : null
 }
