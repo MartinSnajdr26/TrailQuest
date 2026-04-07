@@ -11,31 +11,34 @@ import RoutePlannerScreen from './RoutePlannerScreen.jsx'
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
 const TOTAL_STEPS = 5
 
-const THEME_LABELS = {
-  absurd:  { label: 'Urban absurdní mystery', emoji: '🕵️' },
-  food:    { label: 'Food & beer quest', emoji: '🍺' },
-  beer:    { label: 'Food & beer quest', emoji: '🍺' },
-  coffee:  { label: 'Food & beer quest', emoji: '☕' },
-  dating:  { label: 'Dating & social', emoji: '💬' },
-  social:  { label: 'Dating & social', emoji: '💬' },
-  office:  { label: 'Office & adult humor', emoji: '💼' },
-  urban:   { label: 'Urban absurdní mystery', emoji: '🕵️' },
-  mystery: { label: 'Urban absurdní mystery', emoji: '🕵️' },
-  tech:    { label: 'Urban absurdní mystery', emoji: '📱' },
-  fitness: { label: 'Dating & social', emoji: '🏃' },
-  animal:  { label: 'Urban absurdní mystery', emoji: '🐾' },
-  diy:     { label: 'Office & adult humor', emoji: '🔧' },
+const STORY_GROUPS = [
+  { label: '🕵️ Urban & absurdní mystery', themes: ['absurd', 'urban', 'mystery', 'tech', 'animal', 'everyday'] },
+  { label: '🍺 Food & beer quest', themes: ['food', 'beer', 'coffee'] },
+  { label: '💬 Dating & social', themes: ['dating', 'social', 'fitness'] },
+  { label: '💼 Office & adult humor', themes: ['office', 'diy'] },
+]
+const THEME_EMOJI = { food: '🍽', beer: '🍺', coffee: '☕', urban: '🏙', mystery: '🕵️', tech: '📱', office: '💼', social: '💬', dating: '💕', fitness: '🏃', animal: '🐾', diy: '🔧', everyday: '🏠', absurd: '🎭' }
+
+function getStopCount(story) {
+  let tmpl = story.narrative_template
+  if (typeof tmpl === 'string') { try { tmpl = JSON.parse(tmpl) } catch { return 0 } }
+  return tmpl?.stops?.length || 0
 }
 
-function groupStoriesByTheme(stories) {
-  const groups = {}
-  stories?.forEach(story => {
-    const themeInfo = THEME_LABELS[story.theme] || { label: 'Ostatní', emoji: '📖' }
-    const key = themeInfo.emoji + ' ' + themeInfo.label
-    if (!groups[key]) groups[key] = []
-    groups[key].push(story)
-  })
-  return groups
+function getStoryDifficulty(theme) {
+  const easy = ['food', 'beer', 'coffee', 'everyday', 'animal']
+  const hard = ['mystery', 'tech', 'absurd']
+  if (easy.includes(theme)) return { stars: 1, label: 'Lehké' }
+  if (hard.includes(theme)) return { stars: 3, label: 'Těžké' }
+  return { stars: 2, label: 'Střední' }
+}
+
+function groupStories(stories) {
+  const allGroupedThemes = STORY_GROUPS.flatMap(g => g.themes)
+  const grouped = STORY_GROUPS.map(g => ({ ...g, stories: stories.filter(s => g.themes.includes(s.theme)) })).filter(g => g.stories.length > 0)
+  const uncategorized = stories.filter(s => !allGroupedThemes.includes(s.theme))
+  if (uncategorized.length > 0) grouped.push({ label: '📖 Ostatní', stories: uncategorized })
+  return grouped
 }
 
 const ACTIVITIES = [
@@ -290,7 +293,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
         {/* Stories list */}
         {!storiesLoading && (
-          <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 0 }}>
             {stories.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '30px 0', color: '#94a3b8' }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>📖</div>
@@ -298,28 +301,40 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
                 <div style={{ fontSize: 12 }}>Hádanky budou generovány automaticky</div>
               </div>
             ) : (
-              Object.entries(groupStoriesByTheme(stories)).map(([groupName, groupStories]) => (
-                <div key={groupName} style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', marginBottom: 10 }}>
-                    {groupName}
+              groupStories(stories).map(group => (
+                <div key={group.label} style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#475569', marginBottom: 10, paddingLeft: 4 }}>
+                    {group.label}
                   </div>
-                  {groupStories.map(story => {
-                    const riddleCount = story.narrative_template?.stops?.length || 0
+                  {group.stories.map(story => {
+                    const stopCount = getStopCount(story)
+                    const difficulty = getStoryDifficulty(story.theme)
                     return (
                       <div key={story.id} onClick={() => { setSelectedStory(story); setShowStorySelector(false); setStep(1) }} style={{
-                        display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, cursor: 'pointer',
-                        border: '1px solid rgba(255,255,255,0.08)', background: '#111811', marginBottom: 8,
+                        padding: 16, borderRadius: 14, cursor: 'pointer', border: '1.5px solid rgba(255,255,255,0.1)', background: '#111811', marginBottom: 8,
                       }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 15, fontWeight: 600, color: '#ffffff', marginBottom: 3 }}>{story.title_cs}</div>
-                          {story.description_cs && <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.4 }}>{story.description_cs}</div>}
-                          {riddleCount > 0 ? (
-                            <div style={{ fontSize: 11, color: '#22c55e', marginTop: 5, fontWeight: 600 }}>✓ {riddleCount} připravených hádanek</div>
-                          ) : (
-                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>Hádanky generovány automaticky</div>
-                          )}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+                          <span style={{ fontSize: 24, flexShrink: 0 }}>{THEME_EMOJI[story.theme] || '📖'}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: '#ffffff', lineHeight: 1.3 }}>{story.title_cs}</div>
+                          </div>
                         </div>
-                        <span style={{ color: '#94a3b8', fontSize: 18 }}>›</span>
+                        {story.description_cs && (
+                          <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.4, marginBottom: 10, paddingLeft: 34 }}>{story.description_cs}</div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 34 }}>
+                          {stopCount > 0 ? (
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span>🧩</span><span>{stopCount} hádanek</span>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 12, color: '#475569' }}>🎲 Hádanky generovány AI</div>
+                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 11, color: '#64748b' }}>{difficulty.label}</span>
+                            <span style={{ fontSize: 13 }}>{'⭐'.repeat(difficulty.stars)}{'☆'.repeat(3 - difficulty.stars)}</span>
+                          </div>
+                        </div>
                       </div>
                     )
                   })}

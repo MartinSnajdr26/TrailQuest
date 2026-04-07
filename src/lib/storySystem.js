@@ -14,7 +14,7 @@ export async function selectStory(region) {
 export async function fetchAllStories() {
   try {
     const { data } = await supabase.from('route_stories')
-      .select('id, title_cs, title_en, description_cs, theme, narrative_template')
+      .select('*')
       .eq('is_active', true)
       .order('title_cs')
     return data ?? []
