@@ -38,20 +38,47 @@ export function generateLoopWaypoint(startLat, startLng, distanceKm, bearing = 9
   return { lat: lat2 * 180 / Math.PI, lng: lng2 * 180 / Math.PI }
 }
 
-export async function generateTrailRoute({ activity, waypoints, isLoop, targetDistanceKm, mapyczApiKey, orsApiKey }) {
+async function enrichWithElevation(geometry, orsApiKey) {
+  if (!orsApiKey) return geometry
   try {
-    const r = await routeViaMapyCz({ activity, waypoints, isLoop, apiKey: mapyczApiKey })
-    console.log(`Mapy.cz: ${(r.distance / 1000).toFixed(1)}km (target: ${targetDistanceKm}km)`)
-    if (r.distance / 1000 <= targetDistanceKm * 1.4) return r
-    console.warn('Mapy.cz too long, trying ORS')
+    const coords = geometry?.geometry?.coordinates ?? geometry?.coordinates ?? []
+    if (coords.length < 3 || (coords[0]?.length >= 3 && coords[0][2] > 0)) return geometry // already has elevation
+    const maxPts = 500, step = Math.max(1, Math.floor(coords.length / maxPts))
+    const sampled = coords.filter((_, i) => i % step === 0).map((c) => [c[0], c[1]])
+    if (sampled.length < 2) return geometry
+    const res = await fetch('https://api.openrouteservice.org/elevation/line', {
+      method: 'POST', headers: { Authorization: orsApiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format_in: 'geojson', format_out: 'geojson', geometry: { type: 'LineString', coordinates: sampled } }),
+    })
+    if (!res.ok) return geometry
+    const data = await res.json()
+    const elevated = data.geometry?.coordinates
+    if (!elevated?.length) return geometry
+    const enriched = coords.map((c, i) => {
+      const si = Math.min(Math.floor(i / step), elevated.length - 1)
+      const e = elevated[si]?.[2]
+      return e != null ? [c[0], c[1], e] : c
+    })
+    if (geometry?.geometry?.coordinates) return { ...geometry, geometry: { ...geometry.geometry, coordinates: enriched } }
+    return { ...geometry, coordinates: enriched }
+  } catch (e) { console.warn('Elevation enrichment failed:', e.message); return geometry }
+}
+
+export async function generateTrailRoute({ activity, waypoints, isLoop, targetDistanceKm, mapyczApiKey, orsApiKey }) {
+  let result
+  try {
+    result = await routeViaMapyCz({ activity, waypoints, isLoop, apiKey: mapyczApiKey })
+    console.log(`Mapy.cz: ${(result.distance / 1000).toFixed(1)}km (target: ${targetDistanceKm}km)`)
+    if (result.distance / 1000 > targetDistanceKm * 1.4) { console.warn('Mapy.cz too long, trying ORS'); result = null }
   } catch (e) { console.warn('Mapy.cz failed:', e.message) }
-  if (orsApiKey) {
+  if (!result && orsApiKey) {
     try {
-      const r = await routeViaORS({ activity, waypoints, isLoop, apiKey: orsApiKey })
-      console.log(`ORS: ${(r.distance / 1000).toFixed(1)}km (target: ${targetDistanceKm}km)`)
-      if (r.distance / 1000 > targetDistanceKm * 2) console.warn('ORS route also very long — POIs may need trimming')
-      return r
+      result = await routeViaORS({ activity, waypoints, isLoop, apiKey: orsApiKey })
+      console.log(`ORS: ${(result.distance / 1000).toFixed(1)}km`)
     } catch (e) { console.warn('ORS failed:', e.message) }
   }
-  throw new Error('All routing failed')
+  if (!result) throw new Error('All routing failed')
+  // Enrich with elevation data
+  if (orsApiKey) result.geometry = await enrichWithElevation(result.geometry, orsApiKey)
+  return result
 }

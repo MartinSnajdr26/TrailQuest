@@ -509,13 +509,14 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     return previewAllCoords.slice(0, Math.max(end + 1, 2))
   }, [previewAllCoords, generatedRoute])
 
-  // Init preview map
+  // Init preview map (once per generatedRoute)
+  const [previewMapReady, setPreviewMapReady] = useState(false)
   useEffect(() => {
     if (!generatedRoute || !mapContainer.current || previewAllCoords.length < 2) return
     if (mapRef.current) { mapRef.current.remove(); mapRef.current = null }
+    setPreviewMapReady(false); setShowFullRoute(false)
 
-    const displayCoords = showFullRoute ? previewAllCoords : previewFirstSeg
-    const center = displayCoords[Math.floor(displayCoords.length / 2)]
+    const center = previewAllCoords[Math.floor(previewAllCoords.length / 2)]
     const mapset = ['skiing', 'skitouring'].includes(activity) ? 'winter' : 'outdoor'
 
     const map = new maplibregl.Map({
@@ -525,7 +526,8 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
     })
 
     map.on('load', () => {
-      map.addSource('preview-route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: displayCoords } } })
+      // Add route source with first segment initially
+      map.addSource('preview-route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: previewFirstSeg } } })
       map.addLayer({ id: 'preview-route-line', type: 'line', source: 'preview-route', paint: { 'line-color': '#22c55e', 'line-width': 4 }, layout: { 'line-cap': 'round', 'line-join': 'round' } })
 
       generatedRoute.challenges.forEach((ch, i) => {
@@ -537,14 +539,29 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
         new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map)
       })
 
-      if (firstSeg.length >= 2) {
-        const bounds = firstSeg.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(firstSeg[0], firstSeg[0]))
+      if (previewFirstSeg.length >= 2) {
+        const bounds = previewFirstSeg.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(previewFirstSeg[0], previewFirstSeg[0]))
         map.fitBounds(bounds, { padding: 40 })
       }
+      setPreviewMapReady(true)
     })
     mapRef.current = map
     return () => { map.remove(); mapRef.current = null }
-  }, [generatedRoute, showFullRoute])
+  }, [generatedRoute])
+
+  // Toggle route display (update source data only — no map rebuild)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !previewMapReady) return
+    const src = map.getSource('preview-route')
+    if (!src) return
+    const coords = showFullRoute ? previewAllCoords : previewFirstSeg
+    src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords } })
+    if (coords.length >= 2) {
+      const bounds = coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]))
+      map.fitBounds(bounds, { padding: 50, duration: 400 })
+    }
+  }, [showFullRoute, previewMapReady])
 
   function StepIndicator() {
     return (
@@ -878,14 +895,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
               </p>
             </div>
 
-            <div className="wiz-section">
-              <h3 className="wiz-section-label">{t('wizard.challengeTypes')}</h3>
-              <div className="wiz-chip-row">
-                {[{ id: 'quiz', icon: '🧠', label: t('wizard.typeQuiz') }, { id: 'photo', icon: '📸', label: t('wizard.typePhoto') }, { id: 'mix', icon: '🎲', label: t('wizard.typeMix') }].map((ct) => (
-                  <button key={ct.id} className={`wiz-chip ${challengeTypes.includes(ct.id) ? 'selected' : ''}`} onClick={() => toggleChallengeType(ct.id)}>{ct.icon} {ct.label}</button>
-                ))}
-              </div>
-            </div>
+            {/* Experience type already selected in Step 0 */}
 
             <div className="wiz-section">
               <h3 className="wiz-section-label">{t('wizard.poiPrefs')}</h3>
