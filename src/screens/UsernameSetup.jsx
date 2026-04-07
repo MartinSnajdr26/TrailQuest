@@ -7,7 +7,7 @@ const USERNAME_RE = /^[a-z0-9_]{3,20}$/
 
 export default function UsernameSetup() {
   const { t } = useTranslation()
-  const { user, saveUsername, signOut } = useAuth()
+  const { user, signOut, refreshProfile } = useAuth()
   const [value, setValue] = useState('')
   const [checking, setChecking] = useState(false)
   const [available, setAvailable] = useState(null)
@@ -17,6 +17,7 @@ export default function UsernameSetup() {
 
   const valid = USERNAME_RE.test(value)
 
+  // Debounced uniqueness check
   useEffect(() => {
     setAvailable(null)
     if (!valid) return
@@ -34,25 +35,74 @@ export default function UsernameSetup() {
 
   async function handleSubmit(e) {
     e?.preventDefault()
-    if (!valid || available === false) return
-    setError(''); setSaving(true)
-    try {
-      await saveUsername(value.trim())
-    } catch (err) {
-      const msg = err?.message ?? ''
-      if (msg.includes('23505') || msg.includes('unique') || msg.includes('taken')) setError(t('username.taken'))
-      else setError(msg || t('error.generic'))
-      setSaving(false)
-    }
+    if (!valid || available === false || saving) return
+    await doSave(value.trim())
   }
 
   async function handleSkip() {
+    if (saving) return
+    await doSave('user_' + Math.random().toString(36).slice(2, 8))
+  }
+
+  async function doSave(username) {
     setSaving(true)
+    setError('')
+
     try {
-      const random = 'user_' + Math.random().toString(36).slice(2, 8)
-      await saveUsername(random)
-    } catch {
-      // Force through even if save fails — user can change later
+      // Verify session is alive
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      console.log('UsernameSetup: current user:', currentUser?.id)
+
+      if (!currentUser) {
+        setError(t('error.sessionExpired'))
+        setSaving(false)
+        return
+      }
+
+      const uid = currentUser.id
+
+      // Try UPDATE first (row likely exists from trigger)
+      console.log('UsernameSetup: trying update for', uid, '→', username)
+      const { data: updated, error: updateErr } = await supabase
+        .from('users')
+        .update({ username })
+        .eq('id', uid)
+        .select('id')
+        .maybeSingle()
+
+      console.log('UsernameSetup: update result:', { updated, updateErr })
+
+      if (updateErr) {
+        console.warn('UsernameSetup: update failed:', updateErr.message)
+      }
+
+      if (!updated && !updateErr) {
+        // Row doesn't exist — insert it
+        console.log('UsernameSetup: no row found, inserting')
+        const { error: insertErr } = await supabase
+          .from('users')
+          .insert({ id: uid, username })
+
+        if (insertErr) {
+          console.error('UsernameSetup: insert failed:', insertErr.message)
+          if (insertErr.code === '23505') {
+            setError(t('username.taken'))
+          } else {
+            setError(insertErr.message)
+          }
+          setSaving(false)
+          return
+        }
+      }
+
+      console.log('UsernameSetup: saved! Refreshing profile...')
+      // Refresh profile in AuthContext to clear needsUsername
+      await refreshProfile()
+
+    } catch (err) {
+      console.error('UsernameSetup: unexpected error:', err)
+      setError(err?.message ?? t('error.generic'))
+    } finally {
       setSaving(false)
     }
   }

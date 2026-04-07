@@ -86,13 +86,14 @@ export function AuthProvider({ children }) {
 
   async function saveUsername(username) {
     if (!user) throw new Error('Not authenticated')
-    // Upsert to handle both insert and update
-    const { error } = await supabase.from('users').upsert(
-      { id: user.id, username: username.trim() },
-      { onConflict: 'id' }
-    )
-    if (error) throw error
-    setProfile((prev) => ({ ...prev, id: user.id, username: username.trim() }))
+    const trimmed = username.trim()
+    // Try update first, then insert if row doesn't exist
+    const { data: updated } = await supabase.from('users').update({ username: trimmed }).eq('id', user.id).select('id').maybeSingle()
+    if (!updated) {
+      const { error: insErr } = await supabase.from('users').insert({ id: user.id, username: trimmed })
+      if (insErr) throw insErr
+    }
+    setProfile((prev) => ({ ...prev, id: user.id, username: trimmed }))
   }
 
   function needsUsername() {

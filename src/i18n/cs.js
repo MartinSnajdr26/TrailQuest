@@ -278,7 +278,7 @@ export default {
       'q21': { q: 'Jak změním jazyk nebo motiv?', a: 'Profil → scrollni dolů na Nastavení. Jazyk a motiv.' },
     },
     error: {
-      generic: 'Nastala chyba. Zkuste to znovu.',
+      generic: 'Nastala chyba. Zkuste to znovu.', sessionExpired: 'Relace vypršela. Přihlaš se znovu.',
       invalidCredentials: 'Nesprávný e-mail nebo heslo.',
       emailInUse: 'Tento e-mail je již zaregistrován.', passwordShort: 'Heslo musí mít alespoň 6 znaků.',
     },

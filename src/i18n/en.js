@@ -267,7 +267,7 @@ export default {
       'q21': { q: 'How to change language/theme?', a: 'Profile → scroll down to Settings.' },
     },
     error: {
-      generic: 'An error occurred. Please try again.',
+      generic: 'An error occurred. Please try again.', sessionExpired: 'Session expired. Please log in again.',
       invalidCredentials: 'Invalid email or password.',
       emailInUse: 'This email is already registered.', passwordShort: 'Password must be at least 6 characters.',
     },

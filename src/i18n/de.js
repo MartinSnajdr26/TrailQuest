@@ -267,7 +267,7 @@ export default {
       'q21': { q: 'Sprache/Design ändern?', a: 'Profil → Einstellungen.' },
     },
     error: {
-      generic: 'Ein Fehler ist aufgetreten. Bitte erneut versuchen.',
+      generic: 'Ein Fehler ist aufgetreten. Bitte erneut versuchen.', sessionExpired: 'Sitzung abgelaufen. Bitte erneut anmelden.',
       invalidCredentials: 'Ungültige E-Mail oder Passwort.',
       emailInUse: 'Diese E-Mail ist bereits registriert.', passwordShort: 'Passwort muss mindestens 6 Zeichen haben.',
     },
