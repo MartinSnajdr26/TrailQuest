@@ -55,6 +55,8 @@ export default {
       expTasks: 'Challenges & tasks', expTasksDesc: 'Photos, observations, check-ins at pubs.',
       expRebus: 'Rebus', expRebusDesc: 'Earn a letter at each stop. Solve the word at the end.',
       expMix: 'Mix', expMixDesc: 'Random combination of quizzes, tasks and observations.',
+      customLocation: 'Enter different location', searchLocationPh: 'Prague, Karlstejn...',
+      firstSegment: 'First segment', fullRoute: 'Full route',
       manualSearchTitle: 'Pick your places', manualSearchPh: 'Search place... e.g. "brewery Prague"',
       manualSelectedLabel: 'Selected places', manualContinue: 'Continue to settings',
       manualSettingsTitle: 'Route settings', manualBackToSearch: 'Back to place selection',

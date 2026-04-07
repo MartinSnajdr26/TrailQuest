@@ -48,7 +48,8 @@ export async function generateTrailRoute({ activity, waypoints, isLoop, targetDi
   if (orsApiKey) {
     try {
       const r = await routeViaORS({ activity, waypoints, isLoop, apiKey: orsApiKey })
-      console.log(`ORS: ${(r.distance / 1000).toFixed(1)}km`)
+      console.log(`ORS: ${(r.distance / 1000).toFixed(1)}km (target: ${targetDistanceKm}km)`)
+      if (r.distance / 1000 > targetDistanceKm * 2) console.warn('ORS route also very long — POIs may need trimming')
       return r
     } catch (e) { console.warn('ORS failed:', e.message) }
   }

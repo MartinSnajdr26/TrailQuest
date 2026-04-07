@@ -14,7 +14,7 @@ function getBearing(lat1, lng1, lat2, lng2) {
 
 function scorePOI(poi, ctx) {
   let s = (poi.quality_score ?? 5) * 3
-  const distKm = poi._distM / 1000, idealMin = ctx.targetDistanceKm * 0.15, idealMax = ctx.targetDistanceKm * 0.65
+  const distKm = poi._distM / 1000, idealMin = ctx.targetDistanceKm * 0.05, idealMax = ctx.targetDistanceKm * 0.30
   s += (distKm >= idealMin && distKm <= idealMax) ? 20 : distKm < idealMin ? 5 : -10
   if ((THEME_CATS[ctx.theme] ?? []).includes(poi.poi_category)) s += 25
   if (ctx.selected.length > 0) {
@@ -29,7 +29,7 @@ function scorePOI(poi, ctx) {
 }
 
 export function selectPOIs({ allPOIs, startLat, startLng, targetDistanceKm, challengeCount, theme, isLoop, usedPOINames = [] }) {
-  const maxM = targetDistanceKm * 700
+  const maxM = targetDistanceKm * 400
   const candidates = allPOIs.map((p) => ({ ...p, _distM: haversineDistance([startLng, startLat], [p.gps_lng, p.gps_lat]) })).filter((p) => p._distM <= maxM && p._distM > 50)
   if (!candidates.length) return []
   const selected = [], remaining = [...candidates]

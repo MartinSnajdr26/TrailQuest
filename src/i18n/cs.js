@@ -55,6 +55,8 @@ export default {
       expTasks: 'Výzvy & úkoly', expTasksDesc: 'Fotky, pozorování, check-iny v hospodách.',
       expRebus: 'Rébus', expRebusDesc: 'Na každé zastávce získáš písmeno. Na konci složíš tajné slovo.',
       expMix: 'Mix', expMixDesc: 'Náhodná kombinace kvízů, úkolů a pozorování.',
+      customLocation: 'Zadat jiné místo', searchLocationPh: 'Praha, Karlštejn, Beskydy...',
+      firstSegment: 'První úsek', fullRoute: 'Celá trasa',
       manualSearchTitle: 'Vyber svá místa', manualSearchPh: 'Hledat místo... např. "pivovar Praha"',
       manualSelectedLabel: 'Vybraná místa', manualContinue: 'Pokračovat k nastavení',
       manualSettingsTitle: 'Nastavení trasy', manualBackToSearch: 'Zpět k výběru míst',

@@ -68,14 +68,25 @@ export async function generateSmartRoute({
     orsApiKey: orsApiKey ?? import.meta.env.VITE_ORS_API_KEY,
   })
 
-  // 6. Trim if too long
-  if (routeResult.distance / 1000 > distanceKm * 1.35 && selected.length > 1) {
+  // 6. Iteratively trim furthest POI until route fits distance
+  let maxAllowed = distanceKm * 1.35
+  let trimAttempts = 0
+  while (routeResult.distance / 1000 > maxAllowed && selected.length > 1 && trimAttempts < 3) {
+    trimAttempts++
     onProgress?.('⚡ Zkracuji trasu...')
-    const trimmed = selected.slice(0, -1)
+    // Remove the POI furthest from start
+    let fi = 0, fd = 0
+    selected.forEach((p, i) => {
+      const d = haversineDistance([startLng, startLat], [Number(p.gps_lng ?? p.lng), Number(p.gps_lat ?? p.lat)])
+      if (d > fd) { fd = d; fi = i }
+    })
+    console.warn(`Removing furthest POI: ${selected[fi]?.name} (${(fd / 1000).toFixed(1)}km from start)`)
+    selected.splice(fi, 1)
+    const newWPs = [{ lat: startLat, lng: startLng }, ...selected.map((p) => ({ lat: Number(p.gps_lat ?? p.lat), lng: Number(p.gps_lng ?? p.lng) }))]
     try {
-      const tr = await generateTrailRoute({ activity, waypoints: [waypoints[0], ...trimmed.map((p) => ({ lat: Number(p.gps_lat), lng: Number(p.gps_lng) }))], isLoop, targetDistanceKm: distanceKm, mapyczApiKey: import.meta.env.VITE_MAPYCZ_API_KEY, orsApiKey: import.meta.env.VITE_ORS_API_KEY })
-      if (tr.distance / 1000 <= distanceKm * 1.35) { routeResult = tr; selected = trimmed }
-    } catch { /* keep original */ }
+      routeResult = await generateTrailRoute({ activity, waypoints: newWPs, isLoop, targetDistanceKm: distanceKm, mapyczApiKey: import.meta.env.VITE_MAPYCZ_API_KEY, orsApiKey: import.meta.env.VITE_ORS_API_KEY })
+      console.log(`After trim: ${(routeResult.distance / 1000).toFixed(1)}km`)
+    } catch { break }
   }
 
   const routeCoords = routeResult.geometry?.geometry?.coordinates ?? routeResult.geometry?.coordinates ?? []

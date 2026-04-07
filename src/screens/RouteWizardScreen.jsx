@@ -151,7 +151,19 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   const [userLng, setUserLng] = useState(null)
   const manualDebounceRef = useRef(null)
 
-  // Step 6 state — 3 variants
+  // Start point
+  const [startMode, setStartMode] = useState('gps') // 'gps' | 'custom'
+  const [customStartName, setCustomStartName] = useState('')
+  const [customStartLat, setCustomStartLat] = useState(null)
+  const [customStartLng, setCustomStartLng] = useState(null)
+  const [locSearchQuery, setLocSearchQuery] = useState('')
+  const [locResults, setLocResults] = useState([])
+  const locDebounceRef = useRef(null)
+
+  // Preview toggle
+  const [showFullRoute, setShowFullRoute] = useState(false)
+
+  // Step 7 state — variants
   const [generating, setGenerating] = useState(false)
   const [progressMsg, setProgressMsg] = useState('')
   const [variants, setVariants] = useState([]) // up to 3 generated routes
@@ -193,6 +205,23 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   function toggleChallengeType(type) { setChallengeTypes((p) => p.includes(type) ? p.filter((t) => t !== type) : [...p, type]) }
 
   // ── Manual mode: POI search ────────────────────────────────
+
+  // Location search for custom start point
+  function searchLocation(query) {
+    if (query.length < 2) { setLocResults([]); return }
+    if (locDebounceRef.current) clearTimeout(locDebounceRef.current)
+    locDebounceRef.current = setTimeout(async () => {
+      try {
+        const items = await suggestPlace(query, 49.8, 15.5, undefined)
+        setLocResults(items.slice(0, 5))
+      } catch { setLocResults([]) }
+    }, 350)
+  }
+
+  // Effective start coordinates (GPS or custom)
+  const effectiveStartLat = startMode === 'custom' && customStartLat ? customStartLat : (startLocation?.lat ?? userLat)
+  const effectiveStartLng = startMode === 'custom' && customStartLng ? customStartLng : (startLocation?.lng ?? userLng)
+  const effectiveStartName = startMode === 'custom' && customStartName ? customStartName : (startLocation?.name ?? 'Start')
 
   // Get user GPS on manual mode start
   useEffect(() => {
@@ -333,9 +362,9 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
       : (fetchedPOIs && selectedPOIIds.size > 0 ? [...selectedPOIIds].map((i) => fetchedPOIs[i]).filter(Boolean) : undefined))
     return {
       activity: activity ?? 'hiking',
-      startLat: startLocation?.lat ?? (manualSelected[0]?.lat ?? userLat ?? 50.08),
-      startLng: startLocation?.lng ?? (manualSelected[0]?.lng ?? userLng ?? 14.42),
-      startName: startLocation?.name ?? manualSelected[0]?.name ?? 'Start',
+      startLat: effectiveStartLat ?? (manualSelected[0]?.lat ?? 50.08),
+      startLng: effectiveStartLng ?? (manualSelected[0]?.lng ?? 14.42),
+      startName: effectiveStartName ?? manualSelected[0]?.name ?? 'Start',
       endLat: isLoop ? undefined : endLocation?.lat,
       endLng: isLoop ? undefined : endLocation?.lng,
       isLoop, distanceKm: selectedDistance ?? 10,
@@ -456,7 +485,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   async function refreshAllStops() {
     setRegenerating(true); setVariants([]); setActiveVariant(0)
     try {
-      const result = await generateSmartRoute({ mode, activity: activity ?? 'hiking', experienceType: experienceType ?? 'mix', startLat: startLocation?.lat ?? 50, startLng: startLocation?.lng ?? 14.4, startName: startLocation?.name ?? 'Start', isLoop, distanceKm: selectedDistance ?? 10, challengeCount, dryRun: true, userId: user?.id, anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY, onProgress: (s) => setProgressMsg(s) })
+      const result = await generateSmartRoute({ mode, activity: activity ?? 'hiking', experienceType: experienceType ?? 'mix', startLat: effectiveStartLat ?? 50, startLng: effectiveStartLng ?? 14.4, startName: effectiveStartName ?? 'Start', isLoop, distanceKm: selectedDistance ?? 10, challengeCount, dryRun: true, userId: user?.id, anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY, onProgress: (s) => setProgressMsg(s) })
       setVariants([result])
     } catch (e) { setGenError(e.message) }
     setRegenerating(false)
@@ -699,19 +728,57 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
           </div>
         )}
 
-        {/* Step 3: Location */}
+        {/* Step 3: Location (GPS or custom search) */}
         {step === 3 && (
           <div className="wiz-step">
             <h2 className="wiz-title">{t('wizard.step2Title')}</h2>
-            <button className="btn-primary wiz-gps-btn" onClick={async () => { const loc = await useMyLocation(); if (loc) next() }}>📍 {t('wizard.useMyLocation')}</button>
-            <div className="wiz-or">{t('wizard.or')}</div>
-            <LocationInput value={startLocation} onChange={() => {}} onSelect={(loc) => setStartLocation(loc)} placeholder={t('wizard.searchStart')} />
-            <div className="wiz-loop-toggle">
+
+            {/* GPS option */}
+            <div className={`wiz-loc-card ${startMode === 'gps' ? 'selected' : ''}`} onClick={async () => { setStartMode('gps'); if (!startLocation) { const loc = await useMyLocation(); if (loc) {} } }}>
+              <span style={{ fontSize: 28 }}>📍</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{t('wizard.useMyLocation')}</div>
+                {startLocation && startMode === 'gps' && <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 2 }}>{startLocation.name}</div>}
+              </div>
+              {startMode === 'gps' && startLocation && <span style={{ color: 'var(--accent)' }}>✓</span>}
+            </div>
+
+            {/* Custom location */}
+            <div className={`wiz-loc-card ${startMode === 'custom' ? 'selected' : ''}`} onClick={() => setStartMode('custom')}>
+              <span style={{ fontSize: 28 }}>🔍</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{t('wizard.customLocation')}</div>
+                {customStartName && startMode === 'custom' && <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 2 }}>{customStartName}</div>}
+              </div>
+              {startMode === 'custom' && customStartLat && <span style={{ color: 'var(--accent)' }}>✓</span>}
+            </div>
+
+            {startMode === 'custom' && (
+              <div style={{ marginTop: 8 }}>
+                <input className="form-input" type="text" placeholder={t('wizard.searchLocationPh')} value={locSearchQuery}
+                  autoFocus onChange={(e) => { setLocSearchQuery(e.target.value); searchLocation(e.target.value) }} />
+                {locResults.length > 0 && (
+                  <div className="location-dropdown" style={{ position: 'relative' }}>
+                    {locResults.map((r, i) => (
+                      <button key={i} className="location-option" onClick={() => { setCustomStartLat(r.lat); setCustomStartLng(r.lng); setCustomStartName(r.name); setLocSearchQuery(r.name); setLocResults([]) }}>
+                        <span className="location-option-name">📌 {r.name}</span>
+                        {r.label && <span className="location-option-label">{r.label}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="wiz-loop-toggle" style={{ marginTop: 12 }}>
               <button className={`wiz-toggle-btn ${isLoop ? 'active' : ''}`} onClick={() => setIsLoop(true)}>⟳ {t('wizard.loop')}</button>
               <button className={`wiz-toggle-btn ${!isLoop ? 'active' : ''}`} onClick={() => setIsLoop(false)}>→ {t('wizard.pointToPoint')}</button>
             </div>
-            {!isLoop && <LocationInput value={endLocation} onChange={() => {}} onSelect={(loc) => setEndLocation(loc)} placeholder={t('wizard.searchEnd')} />}
-            <button className="btn-primary" onClick={next} disabled={!startLocation || (!isLoop && !endLocation)}>{t('wizard.next')}</button>
+
+            <button className="btn-primary" style={{ marginTop: 12 }} onClick={next}
+              disabled={!(startMode === 'gps' ? startLocation : (customStartLat && customStartLng))}>
+              {t('wizard.next')}
+            </button>
           </div>
         )}
 
@@ -861,7 +928,15 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
                 {regenerating && <div className="wiz-regen-overlay"><div className="wiz-loading-spinner" /></div>}
 
-                <div ref={mapContainer} className="wiz-preview-map" />
+                {/* Route preview toggle */}
+                <div className="wiz-preview-toggle">
+                  <button className={`wiz-toggle-btn ${!showFullRoute ? 'active' : ''}`} onClick={() => setShowFullRoute(false)}>🔒 {t('wizard.firstSegment')}</button>
+                  <button className={`wiz-toggle-btn ${showFullRoute ? 'active' : ''}`} onClick={() => setShowFullRoute(true)}>🗺 {t('wizard.fullRoute')}</button>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <div ref={mapContainer} className="wiz-preview-map" />
+                  {!showFullRoute && <div className="wiz-lock-overlay">🔒 {t('wizard.lockHint')}</div>}
+                </div>
                 <p className="wiz-lock-hint">🔒 {t('wizard.lockHint')}</p>
 
                 <RouteStats distanceKm={(generatedRoute?.routeLength ?? 0) / 1000} durationSec={generatedRoute?.routeDuration} ascentM={generatedRoute?.route?.elevation_gain_m} />

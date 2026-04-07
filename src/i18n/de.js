@@ -55,6 +55,8 @@ export default {
       expTasks: 'Aufgaben', expTasksDesc: 'Fotos, Beobachtungen, Check-ins.',
       expRebus: 'Rebus', expRebusDesc: 'Verdiene an jedem Stopp einen Buchstaben.',
       expMix: 'Mix', expMixDesc: 'Zufällige Kombination aus Quiz, Aufgaben und Beobachtungen.',
+      customLocation: 'Anderen Ort eingeben', searchLocationPh: 'Prag, Karlstein...',
+      firstSegment: 'Erster Abschnitt', fullRoute: 'Ganze Route',
       manualSearchTitle: 'Wähle deine Orte', manualSearchPh: 'Ort suchen... z.B. "Brauerei Prag"',
       manualSelectedLabel: 'Ausgewählte Orte', manualContinue: 'Weiter zu Einstellungen',
       manualSettingsTitle: 'Routeneinstellungen', manualBackToSearch: 'Zurück zur Auswahl',
