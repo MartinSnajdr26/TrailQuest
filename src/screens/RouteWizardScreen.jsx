@@ -5,7 +5,7 @@ import { loadPOICache, getCache } from '../lib/poiCache.js'
 import { haversineDistance } from '../lib/geo.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
-import { fetchAllStories } from '../lib/storySystem.js'
+import { fetchAllStories, getLocalizedStory } from '../lib/storySystem.js'
 import RoutePlannerScreen from './RoutePlannerScreen.jsx'
 
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
@@ -84,7 +84,8 @@ function normalizePOICategory(cat) {
 const POI_ICONS = { minipivovar: '🍺', horska_chata: '🏠', vyhlidka: '👁', studanka: '💧', skalni_utvar: '🪨', pamatnik: '🏛', kaplička: '⛪', mlyny: '⚙️', vinna_sklep: '🍷', restaurace: '🍽' }
 
 export default function RouteWizardScreen({ onRouteGenerated }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const currentLang = i18n.language?.slice(0, 2) || 'cs'
   const { user } = useAuth()
 
   // Step state
@@ -306,21 +307,22 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
                   <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#475569', marginBottom: 10, paddingLeft: 4 }}>
                     {group.label}
                   </div>
-                  {group.stories.map(story => {
-                    const stopCount = getStopCount(story)
-                    const difficulty = getStoryDifficulty(story.theme)
+                  {group.stories.map(rawStory => {
+                    const story = getLocalizedStory(rawStory, currentLang)
+                    const stopCount = getStopCount(rawStory)
+                    const difficulty = getStoryDifficulty(rawStory.theme)
                     return (
-                      <div key={story.id} onClick={() => { setSelectedStory(story); setShowStorySelector(false); setStep(1) }} style={{
+                      <div key={rawStory.id} onClick={() => { setSelectedStory(story); setShowStorySelector(false); setStep(1) }} style={{
                         padding: 16, borderRadius: 14, cursor: 'pointer', border: '1.5px solid rgba(255,255,255,0.1)', background: '#111811', marginBottom: 8,
                       }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
-                          <span style={{ fontSize: 24, flexShrink: 0 }}>{THEME_EMOJI[story.theme] || '📖'}</span>
+                          <span style={{ fontSize: 24, flexShrink: 0 }}>{THEME_EMOJI[rawStory.theme] || '📖'}</span>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 15, fontWeight: 600, color: '#ffffff', lineHeight: 1.3 }}>{story.title_cs}</div>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: '#ffffff', lineHeight: 1.3 }}>{story.title}</div>
                           </div>
                         </div>
-                        {story.description_cs && (
-                          <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.4, marginBottom: 10, paddingLeft: 34 }}>{story.description_cs}</div>
+                        {story.description && (
+                          <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.4, marginBottom: 10, paddingLeft: 34 }}>{story.description}</div>
                         )}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 34 }}>
                           {stopCount > 0 ? (

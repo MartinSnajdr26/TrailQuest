@@ -21,11 +21,27 @@ export async function fetchAllStories() {
   } catch { return [] }
 }
 
-export function getStopNarrative(story, idx) {
-  // New format: narrative_template.stops[idx].atmosphere
-  const stops = story?.narrative_template?.stops
+export function getLocalizedStory(story, language = 'cs') {
+  if (!story) return null
+  const lang = ['cs', 'en', 'de'].includes(language) ? language : 'cs'
+  // Parse narrative_template if stored as string
+  let tmpl = story.narrative_template
+  if (typeof tmpl === 'string') { try { tmpl = JSON.parse(tmpl) } catch { tmpl = null } }
+  let tmplLang = lang !== 'cs' ? story[`narrative_template_${lang}`] : null
+  if (typeof tmplLang === 'string') { try { tmplLang = JSON.parse(tmplLang) } catch { tmplLang = null } }
+
+  return {
+    ...story,
+    title: story[`title_${lang}`] || story.title_cs,
+    description: story[`description_${lang}`] || story.description_cs,
+    narrative_template: tmplLang || tmpl,
+  }
+}
+
+export function getStopNarrative(story, idx, language = 'cs') {
+  const localized = getLocalizedStory(story, language)
+  const stops = localized?.narrative_template?.stops
   if (stops?.length) return stops[idx % stops.length]?.atmosphere ?? null
-  // Legacy format: stop_prompts
-  const prompts = story?.narrative_template?.stop_prompts
+  const prompts = localized?.narrative_template?.stop_prompts
   return prompts?.length ? prompts[idx % prompts.length] : null
 }
