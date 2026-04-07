@@ -13,9 +13,38 @@ export { clearPOICache }
 export async function generateSmartRoute({
   mode, activity, experienceType, startLat, startLng, startName, endLat, endLng,
   isLoop, distanceKm, challengeCount, variantTheme, manualPOIs,
-  dryRun = false, preGeneratedData, variantSeed = 0, usedPOINames = [],
+  dryRun = false, preGeneratedData, precomputedGeometry, precomputedDistance,
+  variantSeed = 0, usedPOINames = [],
   anthropicKey, mapyczApiKey, orsApiKey, onProgress, userId,
 }) {
+  // Fast path: use precomputed geometry (from interactive planner)
+  if (precomputedGeometry && !dryRun) {
+    console.log('Using precomputed route geometry')
+    const routeCoords = precomputedGeometry?.geometry?.coordinates ?? precomputedGeometry?.coordinates ?? []
+    const pois = manualPOIs?.length > 0 ? manualPOIs : []
+    const points = pois.map((p, i) => ({ ...p, ...placeChallengeTrigger(routeCoords, Number(p.gps_lat ?? p.lat), Number(p.gps_lng ?? p.lng)), stopIndex: i }))
+    let rebusWord = experienceType === 'rebus' ? generateRebus(challengeCount) : null
+    const story = await selectStory(startName)
+    onProgress?.('🧩 Připravuji výzvy...')
+    const challenges = await Promise.all(points.map((pt, i) =>
+      assignChallenge({ poi: pt, stopIndex: i, experienceType, rebusWord, storyNarrative: getStopNarrative(story, i), region: startName, anthropicKey })
+        .then((ch) => ({ ...ch, sequence_order: i + 1, gps_lat: pt.trigger_lat, gps_lng: pt.trigger_lng, trigger_radius_m: pt.trigger_radius_m, poi_name: pt.name, language: 'cs' }))
+    ))
+    if (rebusWord) challenges.push({ sequence_order: challengeCount + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord), gps_lat: startLat, gps_lng: startLng, trigger_radius_m: 100, poi_name: 'Finále', language: 'cs' })
+    const routeKm = (precomputedDistance ?? 0) / 1000
+    const acts = { hiking: 'Turistika', cycling: 'Kolo', mtb: 'MTB', skitouring: 'Skialpy', crosscountry: 'Běžky' }
+    const routeData = { name: `${acts[activity] ?? 'Trasa'} z ${startName}`, description: `${pois.length} zastávek, ${routeKm.toFixed(1)} km`, activity_type: activity, distance_km: routeKm, elevation_gain_m: 0, duration_sec: 0, region: startName ?? '', is_loop: isLoop, start_lat: startLat, start_lng: startLng }
+    onProgress?.('💾 Ukládám trasu...')
+    const uid = userId ?? (await supabase.auth.getUser()).data.user?.id
+    const { data: saved, error } = await supabase.from('routes').insert({ ...routeData, gpx_data: JSON.stringify(precomputedGeometry), created_by: uid }).select().single()
+    if (error) throw new Error('Save: ' + error.message)
+    const ins = challenges.map((c) => ({ route_id: saved.id, sequence_order: c.sequence_order, type: c.type, title: c.poi_name, description: c.content_json?.task, lat: c.gps_lat, lng: c.gps_lng }))
+    await supabase.from('challenges').insert(ins)
+    clearPOICache()
+    onProgress?.('✅')
+    return { route: saved, challenges: ins, routeGeometry: precomputedGeometry, distance: precomputedDistance, isDryRun: false }
+  }
+
   // Fast path: save pre-generated data
   if (preGeneratedData) {
     const r = preGeneratedData.route, chs = preGeneratedData.challenges, geo = preGeneratedData.routeGeometry

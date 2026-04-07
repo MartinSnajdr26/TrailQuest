@@ -228,6 +228,10 @@ export default {
       feat7: 'Freunde herausfordern', feat8: 'Jährlicher Reisepass',
       techTitle: 'Technologie', contactTitle: 'Kontakt', emailUs: 'E-Mail senden',
     },
+    planner: {
+      title: 'Routenplanung', distance: 'Routenlänge', nearbyPOIs: 'Was Sie sehen werden',
+      newStops: 'Andere Stopps', start: 'Route starten!',
+    },
     ob: {
       skip: 'Überspringen', continue: 'Weiter',
       chooseLang: 'Sprache wählen:', chooseTheme: 'Design:',

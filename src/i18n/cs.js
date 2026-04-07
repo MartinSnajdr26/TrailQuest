@@ -236,6 +236,10 @@ export default {
       feat7: 'Výzvy přátel', feat8: 'Roční cestovní pas',
       techTitle: 'Technologie', contactTitle: 'Kontakt', emailUs: 'Napsat nám',
     },
+    planner: {
+      title: 'Plánování trasy', distance: 'Délka trasy', nearbyPOIs: 'Co cestou uvidíte',
+      newStops: 'Jiné zastávky', start: 'Vyrazit na trasu!',
+    },
     ob: {
       skip: 'Přeskočit', continue: 'Pokračovat',
       chooseLang: 'Vyber jazyk:', chooseTheme: 'Vzhled:',

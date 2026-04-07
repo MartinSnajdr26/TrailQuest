@@ -228,6 +228,10 @@ export default {
       feat7: 'Friend challenges', feat8: 'Annual travel passport',
       techTitle: 'Technology', contactTitle: 'Contact', emailUs: 'Email us',
     },
+    planner: {
+      title: 'Route planner', distance: 'Route length', nearbyPOIs: 'What you will see',
+      newStops: 'Different stops', start: 'Start route!',
+    },
     ob: {
       skip: 'Skip', continue: 'Continue',
       chooseLang: 'Choose language:', chooseTheme: 'Theme:',

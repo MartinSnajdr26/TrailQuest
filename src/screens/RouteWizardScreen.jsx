@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import ElevationProfile from '../components/ElevationProfile.jsx'
 import RouteStats, { formatDuration } from '../components/RouteStats.jsx'
+import RoutePlannerScreen from './RoutePlannerScreen.jsx'
 
 const API_KEY = import.meta.env.VITE_MAPYCZ_API_KEY
 const TOTAL_STEPS = 7
@@ -160,8 +161,10 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
   const [locResults, setLocResults] = useState([])
   const locDebounceRef = useRef(null)
 
-  // Preview toggle
+  // Preview toggle + planner mode
   const [showFullRoute, setShowFullRoute] = useState(false)
+  const [showPlanner, setShowPlanner] = useState(false)
+  const [variantTheme, setVariantTheme] = useState('food_drink')
 
   // Step 7 state — variants
   const [generating, setGenerating] = useState(false)
@@ -941,8 +944,23 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
           </div>
         )}
 
-        {/* Step 6: Preview with variants */}
-        {step === 7 && (
+        {/* Step 7: Interactive planner OR variant preview */}
+        {step === 7 && showPlanner && (
+          <RoutePlannerScreen
+            activity={activity ?? 'hiking'}
+            experienceType={experienceType ?? 'mix'}
+            challengeCount={challengeCount}
+            startLat={effectiveStartLat ?? 50.08}
+            startLng={effectiveStartLng ?? 14.42}
+            startName={effectiveStartName ?? 'Start'}
+            isLoop={isLoop}
+            variantTheme={variantTheme ?? 'food_drink'}
+            distanceKm={selectedDistance ?? 10}
+            onBack={() => setShowPlanner(false)}
+            onStartRoute={onRouteGenerated}
+          />
+        )}
+        {step === 7 && !showPlanner && (
           <div className="wiz-step wiz-step-preview">
             {generating && <div className="wiz-loading"><div className="wiz-loading-spinner" /><p className="wiz-loading-msg">{progressMsg}</p></div>}
             {genError && !generating && <div className="wiz-error"><p>{genError}</p><button className="btn-primary" onClick={() => { setGenError(null); setVariants([]); setGenerating(false) }}>{t('wizard.retry')}</button></div>}
@@ -1011,7 +1029,7 @@ export default function RouteWizardScreen({ onRouteGenerated }) {
 
                 <div className="wiz-preview-actions">
                   <button className="btn-secondary" onClick={() => { setStep(6); setVariants([]) }}>← {t('wizard.edit')}</button>
-                  <button className="btn-secondary" onClick={refreshAllStops} disabled={regenerating}>🔄 {t('wizard.refreshStops')}</button>
+                  <button className="btn-secondary" onClick={() => setShowPlanner(true)}>🗺 {t('planner.title')}</button>
                   <button className="btn-primary wiz-start-btn" disabled={regenerating} onClick={async () => {
                     if (!generatedRoute) return
                     if (generatedRoute.isDryRun) {
