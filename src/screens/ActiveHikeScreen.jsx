@@ -137,6 +137,7 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
   const [hudCollapsed, setHudCollapsed] = useState(false)
 
   const markerEls = useRef(new Map())
+  const markerInstances = useRef([])
   const rebusStatsRef = useRef({ hintsUsed: 0, skipped: 0, correct: 0, total: 0 })
 
   // Weather + audio
@@ -183,6 +184,21 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
     }
   }
 
+  function cleanupMap() {
+    markerInstances.current.forEach(m => { try { m.remove() } catch {} })
+    markerInstances.current = []
+    markerEls.current.clear()
+    const map = mapRef.current
+    if (!map) return
+    try {
+      const style = map.getStyle()
+      const layers = style?.layers?.filter(l => l.id.startsWith('hike-seg-') || l.id.startsWith('user-loc')) ?? []
+      const sources = Object.keys(style?.sources ?? {}).filter(s => s.startsWith('hike-seg-') || s.startsWith('user-loc'))
+      layers.forEach(l => { try { map.removeLayer(l.id) } catch {} })
+      sources.forEach(s => { try { map.removeSource(s) } catch {} })
+    } catch {}
+  }
+
   // Map init
   useEffect(() => {
     if (mapRef.current) return
@@ -199,7 +215,7 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
     })
     map.on('load', () => setMapReady(true))
     mapRef.current = map
-    return () => { map.remove(); mapRef.current = null }
+    return () => { cleanupMap(); map.remove(); mapRef.current = null }
   }, [])
 
   // Add segments + markers
@@ -225,7 +241,8 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
         ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
         : isNext ? `<span class="ch-marker-num">${i + 1}</span>`
         : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
-      new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([Number(ch.lng), Number(ch.lat)]).addTo(map)
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([Number(ch.lng), Number(ch.lat)]).addTo(map)
+      markerInstances.current.push(marker)
       markerEls.current.set(ch.id ?? `ch-${i}`, el)
     })
     // Fit to latest unlocked segment
@@ -404,6 +421,7 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
         <div className="hike-complete-banner">
           <span>🎉 {t('hike.routeDone')}</span>
           <button className="hike-complete-btn" onClick={() => {
+            cleanupMap()
             audioGuide.speak(`Gratuluju! Dokončil jsi trasu. Ušels ${walkedKm.toFixed(1)} kilometrů.`)
             onFinish({ completed: true, completedCount, totalChallenges: sortedChallenges.length, startedAt, finishedAt: new Date().toISOString(), walkedKm, weather, rebusStats: rebusStatsRef.current.total > 0 ? rebusStatsRef.current : null })
           }}>
@@ -430,7 +448,7 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
           <div className="hike-confirm" onClick={(e) => e.stopPropagation()}>
             <p>{t('hike.exitConfirm')}</p>
             <div className="hike-confirm-btns">
-              <button className="btn-primary" onClick={() => { setShowExitConfirm(false); onFinish({ completed: false }) }}>{t('hike.exitYes')}</button>
+              <button className="btn-primary" onClick={() => { setShowExitConfirm(false); cleanupMap(); onFinish({ completed: false }) }}>{t('hike.exitYes')}</button>
               <button className="btn-secondary" onClick={() => setShowExitConfirm(false)}>{t('hike.exitNo')}</button>
             </div>
           </div>

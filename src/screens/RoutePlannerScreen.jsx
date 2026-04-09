@@ -56,7 +56,12 @@ export default function RoutePlannerScreen({ activity, experienceType, challenge
       setMapReady(true)
     })
     mapRef.current = map
-    return () => { map.remove(); mapRef.current = null }
+    return () => {
+      Object.values(markersRef.current).forEach(m => { try { m.remove() } catch {} })
+      markersRef.current = {}
+      map.remove()
+      mapRef.current = null
+    }
   }, [])
 
   // Initial route + POI load

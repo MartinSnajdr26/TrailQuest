@@ -28,4 +28,12 @@ export function getCache() {
   try { return JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null') } catch { return null }
 }
 
-export function clearPOICache() { sessionStorage.removeItem(CACHE_KEY) }
+export function clearPOICache() {
+  sessionStorage.removeItem(CACHE_KEY)
+  const toRemove = []
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const k = sessionStorage.key(i)
+    if (k?.startsWith('osm_live_') || k?.startsWith('osm_mountain_')) toRemove.push(k)
+  }
+  toRemove.forEach(k => sessionStorage.removeItem(k))
+}
