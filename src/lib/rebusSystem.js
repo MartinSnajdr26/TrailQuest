@@ -1,9 +1,20 @@
-const WORDS = { 3: ['LES', 'HOP', 'PUB'], 4: ['HRAD', 'HORA', 'PIVO'], 5: ['STEZA', 'KAMEN', 'CESKO'], 6: ['NATURA', 'PIVOOO'], 7: ['STEZKOU', 'TURISTU'], 8: ['TURISTKA', 'KRAJINOU'], 9: ['ADVENTURE'], 10: ['TRAILQUEST'] }
+const WORDS = {
+  1: ['X'], 2: ['OK', 'GO'],
+  3: ['LES', 'HOP', 'PUB', 'VUL'],
+  4: ['HRAD', 'HORA', 'PIVO', 'VODA', 'BRNO', 'LETO'],
+  5: ['STEZA', 'KAMEN', 'HOLUB', 'KEBAB', 'LESIK'],
+  6: ['NATURA', 'VIKEND', 'HOLUBI', 'TOURIS'],
+  7: ['STEZKOU', 'TURISTU', 'PIVNICE'],
+  8: ['TURISTKA', 'KRAJINOU', 'PIVOVARY'],
+  9: ['ADVENTURE', 'PROCHAZKA'],
+  10: ['TRAILQUEST', 'DOBRODRUZI'],
+}
 
 export function generateRebus(count) {
-  const opts = WORDS[count]
+  const c = Math.max(1, Math.min(10, count || 4))
+  const opts = WORDS[c]
   if (opts?.length) return opts[Math.floor(Math.random() * opts.length)]
-  return 'TRAILQUEST'.slice(0, Math.min(count, 10)).padEnd(count, 'X').slice(0, count)
+  return 'TRAILQUEST'.slice(0, c).padEnd(c, 'X').slice(0, c)
 }
 
 export function getRebusProgress(word, revealed) {

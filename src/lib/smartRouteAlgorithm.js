@@ -41,14 +41,15 @@ export async function generateSmartRoute({
       const next = pois[i + 1]
       return { ...p, ...placeChallengeTrigger(routeCoords, Number(p.gps_lat ?? p.lat), Number(p.gps_lng ?? p.lng), next ? Number(next.gps_lat ?? next.lat) : null, next ? Number(next.gps_lng ?? next.lng) : null), stopIndex: i }
     })
-    let rebusWord = experienceType === 'rebus' ? generateRebus(challengeCount) : null
+    const actualStops = points.length
+    let rebusWord = experienceType === 'rebus' ? generateRebus(actualStops) : null
     const story = selectedStory ?? await selectStory(startName)
     onProgress?.('🧩 Připravuji výzvy...')
     const challenges = await Promise.all(points.map((pt, i) =>
       assignChallenge({ poi: pt, stopIndex: i, experienceType, rebusWord, story, storyNarrative: getStopNarrative(story, i), region: startName, anthropicKey })
         .then((ch) => ({ ...ch, sequence_order: i + 1, gps_lat: pt.trigger_lat, gps_lng: pt.trigger_lng, trigger_radius_m: pt.trigger_radius_m, poi_name: pt.name, language: 'cs' }))
     ))
-    if (rebusWord) challenges.push({ sequence_order: challengeCount + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord, story), gps_lat: startLat, gps_lng: startLng, trigger_radius_m: 100, poi_name: 'Finále', language: 'cs' })
+    if (rebusWord) challenges.push({ sequence_order: actualStops + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord, story), gps_lat: startLat, gps_lng: startLng, trigger_radius_m: 100, poi_name: 'Finále', language: 'cs' })
     const routeKm = (precomputedDistance ?? 0) / 1000
     const acts = { hiking: 'Turistika', cycling: 'Kolo', mtb: 'MTB', skitouring: 'Skialpy', crosscountry: 'Běžky' }
     const routeData = { name: `${acts[activity] ?? 'Trasa'} z ${startName}`, description: `${pois.length} zastávek, ${routeKm.toFixed(1)} km`, activity_type: activity, distance_km: routeKm, elevation_gain_m: 0, duration_sec: 0, region: startName ?? '', is_loop: isLoop, start_lat: startLat, start_lng: startLng }
@@ -150,8 +151,9 @@ export async function generateSmartRoute({
     return { ...poi, ...placeChallengeTrigger(routeCoords, Number(poi.gps_lat ?? poi.lat), Number(poi.gps_lng ?? poi.lng), next ? Number(next.gps_lat ?? next.lat) : null, next ? Number(next.gps_lng ?? next.lng) : null), stopIndex: i }
   })
 
-  // 8. Rebus
-  let rebusWord = experienceType === 'rebus' ? generateRebus(challengeCount) : null
+  // 8. Rebus (use actual stop count, not challengeCount which may differ after filtering)
+  const actualStopCount = selected.length
+  let rebusWord = experienceType === 'rebus' ? generateRebus(actualStopCount) : null
 
   // 9. Story
   const story = selectedStory ?? await selectStory(startName)
@@ -166,7 +168,7 @@ export async function generateSmartRoute({
   // Rebus finale
   if (rebusWord) {
     const finLoc = isLoop ? { lat: startLat, lng: startLng } : { lat: Number(selected[selected.length - 1]?.gps_lat ?? startLat), lng: Number(selected[selected.length - 1]?.gps_lng ?? startLng) }
-    challenges.push({ sequence_order: challengeCount + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord, story), gps_lat: finLoc.lat, gps_lng: finLoc.lng, trigger_radius_m: 100, poi_name: 'Finále rébusu', language: 'cs' })
+    challenges.push({ sequence_order: actualStopCount + 1, type: 'rebus_finale', content_json: buildRebusFinale(rebusWord, story), gps_lat: finLoc.lat, gps_lng: finLoc.lng, trigger_radius_m: 100, poi_name: 'Finále rébusu', language: 'cs' })
   }
 
   // 11. Segments
