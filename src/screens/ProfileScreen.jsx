@@ -306,7 +306,7 @@ export default function ProfileScreen() {
             )}
 
             {/* Badge wall */}
-            <BadgeWall earnedBadgeIds={earnedBadgeIds} />
+            <BadgeWall earnedBadgeIds={earnedBadgeIds} userStats={stats} />
           </>
         ) : (
           <div className="empty-state">{t('profile.noData')}</div>
