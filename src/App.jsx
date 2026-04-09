@@ -137,16 +137,18 @@ function AppShell() {
       if (error) console.warn('Run update error:', error.message)
     }
 
-    // Update user totals
+    // Sync user totals (fallback if DB trigger not yet created)
     if (user) {
       try {
-        const { data: cur } = await supabase.from('users').select('total_routes, total_km, total_challenges').eq('id', user.id).single()
-        await supabase.from('users').update({
-          total_routes: (cur?.total_routes || 0) + 1,
-          total_km: parseFloat(((cur?.total_km || 0) + (result.walkedKm ?? route?.distance_km ?? 0)).toFixed(2)),
-          total_challenges: (cur?.total_challenges || 0) + (result.completedCount ?? 0),
-        }).eq('id', user.id)
-      } catch (e) { console.warn('Stats update error:', e) }
+        const { data: runs } = await supabase.from('user_route_runs').select('total_km, challenges_completed').eq('user_id', user.id).eq('is_completed', true)
+        if (runs) {
+          await supabase.from('users').update({
+            total_routes: runs.length,
+            total_km: parseFloat(runs.reduce((s, r) => s + (r.total_km ?? 0), 0).toFixed(2)),
+            total_challenges: runs.reduce((s, r) => s + (r.challenges_completed ?? 0), 0),
+          }).eq('id', user.id)
+        }
+      } catch (e) { console.warn('Stats sync error:', e) }
     }
 
     setActiveHike(null)
