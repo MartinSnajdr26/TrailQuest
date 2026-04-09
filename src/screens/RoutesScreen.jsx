@@ -37,7 +37,7 @@ export default function RoutesScreen({ onStartRoute, activeHike, onResumeHike, o
         .limit(50),
       supabase
         .from('user_route_runs')
-        .select('id, started_at, completed_at, is_completed, routes(id, name, activity_type, distance_km, difficulty, gpx_data, region, elevation_gain_m, start_lat, start_lng)')
+        .select('id, started_at, completed_at, is_completed, total_km, challenges_completed, experience_type, kraj, routes(id, name, activity_type, distance_km, difficulty, gpx_data, region, elevation_gain_m, start_lat, start_lng, experience_type)')
         .eq('user_id', user.id)
         .eq('is_completed', true)
         .order('completed_at', { ascending: false })
@@ -203,8 +203,9 @@ export default function RoutesScreen({ onStartRoute, activeHike, onResumeHike, o
                 <div className="route-card-name">{run.routes?.name ?? '—'}</div>
               </div>
               <div className="route-card-meta">
-                <span>{formatKm(run.routes?.distance_km)}</span>
+                <span>{formatKm(run.total_km ?? run.routes?.distance_km)}</span>
                 <span>{elapsed(run.started_at, run.completed_at)}</span>
+                {run.challenges_completed > 0 && <span>🧩 {run.challenges_completed}</span>}
                 <span>{formatDate(run.completed_at)}</span>
               </div>
             </div>
