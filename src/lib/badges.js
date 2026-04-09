@@ -1,44 +1,65 @@
 import { supabase } from './supabase.js'
 
-export const BADGE_DEFS = [
-  { id: 'first_route', name: 'badge.firstRoute', desc: 'badge.firstRouteDesc', rarity: 'bronze', icon: '��', check: (s) => s.routesCompleted >= 1 },
-  { id: 'first_challenge', name: 'badge.firstChallenge', desc: 'badge.firstChallengeDesc', rarity: 'bronze', icon: '⭐', check: (s) => s.challengesSolved >= 1 },
-  { id: 'km_10', name: 'badge.km10', desc: 'badge.km10Desc', rarity: 'bronze', icon: '👣', check: (s) => s.totalKm >= 10 },
-  { id: 'routes_5', name: 'badge.routes5', desc: 'badge.routes5Desc', rarity: 'silver', icon: '🗺️', check: (s) => s.routesCompleted >= 5 },
-  { id: 'km_50', name: 'badge.km50', desc: 'badge.km50Desc', rarity: 'silver', icon: '🏃', check: (s) => s.totalKm >= 50 },
-  { id: 'streak_7', name: 'badge.streak7', desc: 'badge.streak7Desc', rarity: 'silver', icon: '🔥', check: (s) => s.weeklyStreak >= 7 },
-  { id: 'quiz_master', name: 'badge.quizMaster', desc: 'badge.quizMasterDesc', rarity: 'silver', icon: '🧠', check: (s) => s.quizCorrectPct >= 90 && s.challengesSolved >= 10 },
-  { id: 'routes_20', name: 'badge.routes20', desc: 'badge.routes20Desc', rarity: 'gold', icon: '🏆', check: (s) => s.routesCompleted >= 20 },
-  { id: 'km_200', name: 'badge.km200', desc: 'badge.km200Desc', rarity: 'gold', icon: '⛰️', check: (s) => s.totalKm >= 200 },
-  { id: 'challenges_50', name: 'badge.challenges50', desc: 'badge.challenges50Desc', rarity: 'gold', icon: '💎', check: (s) => s.challengesSolved >= 50 },
-  { id: 'routes_50', name: 'badge.routes50', desc: 'badge.routes50Desc', rarity: 'platinum', icon: '👑', check: (s) => s.routesCompleted >= 50 },
-  { id: 'km_500', name: 'badge.km500', desc: 'badge.km500Desc', rarity: 'platinum', icon: '🌍', check: (s) => s.totalKm >= 500 },
-]
-
 export const RARITY_COLORS = { bronze: '#cd7f32', silver: '#c0c0c0', gold: '#ffd700', platinum: '#e5e4e2' }
 
-export async function checkAndAwardBadges(userId, stats) {
-  if (!userId) return []
-  const { data: earned } = await supabase.from('user_badges').select('badge_id').eq('user_id', userId)
-  const earnedIds = new Set((earned ?? []).map((b) => b.badge_id))
-  const newBadges = []
-  for (const badge of BADGE_DEFS) {
-    if (earnedIds.has(badge.id)) continue
-    if (badge.check(stats)) {
-      const { error } = await supabase.from('user_badges').upsert(
-        { user_id: userId, badge_id: badge.id, awarded_at: new Date().toISOString() },
-        { onConflict: 'user_id,badge_id' }
-      )
-      if (!error) newBadges.push(badge)
-    }
-  }
-  return newBadges
+export async function fetchAllBadges() {
+  const { data } = await supabase.from('badges').select('*').order('condition_value')
+  return data ?? []
 }
 
 export async function fetchUserBadges(userId) {
   if (!userId) return []
-  const { data } = await supabase.from('user_badges').select('badge_id, awarded_at').eq('user_id', userId)
+  const { data } = await supabase.from('user_badges').select('badge_id, earned_at').eq('user_id', userId)
   return data ?? []
+}
+
+export async function checkAndAwardBadges(userId, stats) {
+  if (!userId) return []
+  try {
+    const [{ data: allBadges }, { data: alreadyEarned }] = await Promise.all([
+      supabase.from('badges').select('*'),
+      supabase.from('user_badges').select('badge_id').eq('user_id', userId),
+    ])
+    if (!allBadges?.length) return []
+    const earnedIds = new Set((alreadyEarned ?? []).map(b => b.badge_id))
+    const newBadges = []
+
+    for (const badge of allBadges) {
+      if (earnedIds.has(badge.id)) continue
+      if (!checkBadgeCondition(badge, stats)) continue
+
+      const { error } = await supabase.from('user_badges').upsert(
+        { user_id: userId, badge_id: badge.id, earned_at: new Date().toISOString() },
+        { onConflict: 'user_id,badge_id', ignoreDuplicates: true }
+      )
+      if (!error) {
+        newBadges.push({ id: badge.id, icon: badge.icon_emoji, name: badge.name_cs, rarity: badge.rarity })
+      } else {
+        console.warn('Badge insert error:', badge.name_cs, error.message)
+      }
+    }
+    return newBadges
+  } catch (e) {
+    console.warn('checkAndAwardBadges error:', e)
+    return []
+  }
+}
+
+function checkBadgeCondition(badge, stats) {
+  const val = badge.condition_value ?? 1
+  switch (badge.condition_type) {
+    case 'total_km': return (stats.totalKm ?? 0) >= val
+    case 'streak_weeks': return (stats.weeklyStreak ?? 0) >= val
+    case 'correct_quizzes': return (stats.quizCorrect ?? 0) >= val
+    case 'photo_tasks': return (stats.photoTasks ?? 0) >= val
+    case 'brewery_checkins': return (stats.breweryCheckins ?? 0) >= val
+    // Weather/time badges are handled by checkWeatherBadges
+    case 'rain_hike': case 'snow_hike': case 'heat_hike': case 'storm_hike':
+    case 'below_zero': case 'before_7am': case 'after_sunset':
+    case 'first_on_route':
+      return false // handled separately
+    default: return false
+  }
 }
 
 // ── Ambassador badge — first to complete a route ─────────────
@@ -54,7 +75,6 @@ export async function checkAmbassadorBadge(routeId, userId, runId) {
       .neq('user_id', userId)
 
     if (count === 0) {
-      // First to finish! Try to award badge
       const { data: badge } = await supabase
         .from('badges')
         .select('id')
@@ -67,8 +87,6 @@ export async function checkAmbassadorBadge(routeId, userId, runId) {
           { onConflict: 'user_id,badge_id', ignoreDuplicates: true }
         )
       }
-
-      // Mark route ambassador
       await supabase.from('routes').update({ ambassador_user_id: userId }).eq('id', routeId)
       return true
     }

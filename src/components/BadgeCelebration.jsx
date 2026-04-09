@@ -30,13 +30,13 @@ export default function BadgeCelebration({ badges, onClose }) {
       <div className="badge-celebration" onClick={(e) => e.stopPropagation()}>
         <div className="badge-celebration-glow" style={{ background: color }} />
         <div className="badge-celebration-icon" style={{ borderColor: color }}>
-          <span className="badge-celebration-emoji">{badge.icon}</span>
+          <span className="badge-celebration-emoji">{badge.icon ?? badge.icon_emoji ?? '🏅'}</span>
         </div>
         <h2 className="badge-celebration-title">{t('badge.earned')}</h2>
         <h3 className="badge-celebration-name" style={{ color }}>
-          {t(badge.name)}
+          {badge.name ?? t(badge.name_cs)}
         </h3>
-        <p className="badge-celebration-desc">{t(badge.desc)}</p>
+        {badge.desc && <p className="badge-celebration-desc">{t(badge.desc)}</p>}
         <div className="badge-celebration-rarity" style={{ color }}>
           {t(`badge.${badge.rarity}`)}
         </div>
