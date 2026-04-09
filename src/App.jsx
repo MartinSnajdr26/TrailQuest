@@ -18,6 +18,26 @@ import BadgeCelebration from './components/BadgeCelebration.jsx'
 
 const HIKE_KEY = 'tq_active_hike'
 
+function inferKraj(lat, lng) {
+  if (!lat || !lng) return null
+  lat = parseFloat(lat); lng = parseFloat(lng)
+  if (lat > 49.9 && lat < 50.25 && lng > 14.2 && lng < 14.7) return 'Praha'
+  if (lat > 49.7 && lat < 50.25 && lng > 13.3 && lng < 14.7) return 'Středočeský'
+  if (lat > 48.5 && lat < 49.6 && lng > 13.0 && lng < 14.7) return 'Jihočeský'
+  if (lat > 49.3 && lat < 50.0 && lng > 12.7 && lng < 13.7) return 'Plzeňský'
+  if (lat > 50.0 && lat < 50.7 && lng > 12.1 && lng < 13.5) return 'Karlovarský'
+  if (lat > 50.3 && lat < 51.0 && lng > 13.1 && lng < 15.0) return 'Ústecký'
+  if (lat > 50.6 && lat < 51.05 && lng > 14.7 && lng < 15.5) return 'Liberecký'
+  if (lat > 50.2 && lat < 50.8 && lng > 15.4 && lng < 16.5) return 'Královéhradecký'
+  if (lat > 49.7 && lat < 50.3 && lng > 15.5 && lng < 17.0) return 'Pardubický'
+  if (lat > 49.2 && lat < 50.0 && lng > 14.9 && lng < 16.5) return 'Vysočina'
+  if (lat > 48.5 && lat < 49.5 && lng > 16.0 && lng < 17.5) return 'Jihomoravský'
+  if (lat > 49.3 && lat < 50.0 && lng > 16.8 && lng < 17.9) return 'Olomoucký'
+  if (lat > 48.9 && lat < 49.7 && lng > 17.3 && lng < 18.4) return 'Zlínský'
+  if (lat > 49.3 && lat < 50.0 && lng > 17.8 && lng < 18.9) return 'Moravskoslezský'
+  return null
+}
+
 function loadSavedHike() {
   try { const s = localStorage.getItem(HIKE_KEY); return s ? JSON.parse(s) : null } catch { return null }
 }
@@ -75,7 +95,11 @@ function AppShell() {
     }
     let runId = null
     try {
-      const { data: run } = await supabase.from('user_route_runs').insert({ user_id: user?.id, route_id: route.id, started_at: new Date().toISOString(), is_completed: false }).select('id').single()
+      const { data: run } = await supabase.from('user_route_runs').insert({
+        user_id: user?.id, route_id: route.id, started_at: new Date().toISOString(), is_completed: false,
+        activity_type: route.activity_type || 'hiking', region: route.region || null,
+        kraj: inferKraj(route.start_lat, route.start_lng), experience_type: route.experience_type || null,
+      }).select('id').single()
       runId = run?.id ?? null
     } catch (e) { console.warn('Could not create route run:', e) }
     setActiveHike({ route, challenges, routeGeometry, runId, startedAt: new Date().toISOString(), completedChallengeIds: [], walkedKm: 0, totalPausedMs: 0 })
@@ -93,22 +117,42 @@ function AppShell() {
 
   async function handleFinishHike(result) {
     if (!result?.completed) {
-      // User tapped "exit" — hide hike but KEEP it saved for resume
       setHikeVisible(false)
       return
     }
 
-    // Route completed — save to DB, clear state, show summary
     const route = activeHike?.route
     const runId = activeHike?.runId
     const hikeWeather = result?.weather
+
+    // Save run completion with full stats
     if (runId) {
-      const u = { completed_at: new Date().toISOString(), is_completed: true }
+      const u = {
+        completed_at: new Date().toISOString(), is_completed: true,
+        total_km: parseFloat(result.walkedKm ?? route?.distance_km ?? 0),
+        challenges_completed: result.completedCount ?? 0,
+      }
       if (hikeWeather) { u.weather_temp_c = hikeWeather.temp_c; u.weather_condition = hikeWeather.condition; u.weather_rain_mm = hikeWeather.rain_mm; u.weather_snow_cm = hikeWeather.snow_cm }
-      supabase.from('user_route_runs').update(u).eq('id', runId).then(() => {})
+      const { error } = await supabase.from('user_route_runs').update(u).eq('id', runId)
+      if (error) console.warn('Run update error:', error.message)
     }
+
+    // Update user totals
+    if (user) {
+      try {
+        const { data: cur } = await supabase.from('users').select('total_routes, total_km, total_challenges').eq('id', user.id).single()
+        await supabase.from('users').update({
+          total_routes: (cur?.total_routes || 0) + 1,
+          total_km: parseFloat(((cur?.total_km || 0) + (result.walkedKm ?? route?.distance_km ?? 0)).toFixed(2)),
+          total_challenges: (cur?.total_challenges || 0) + (result.completedCount ?? 0),
+        }).eq('id', user.id)
+      } catch (e) { console.warn('Stats update error:', e) }
+    }
+
     setActiveHike(null)
     setHikeVisible(false)
+
+    // Award badges
     let earned = [], isAmbassador = false
     if (user) {
       try {

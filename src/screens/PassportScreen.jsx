@@ -18,6 +18,24 @@ const REGION_COLORS = [
   '#0ea5e9', '#10b981',
 ]
 
+const KRAJ_NORMALIZE = {
+  'Praha a okolí': 'Praha', 'Hlavní město Praha': 'Praha', 'Prague': 'Praha',
+  'Střední Čechy': 'Středočeský', 'Středočeský kraj': 'Středočeský',
+  'Jižní Čechy': 'Jihočeský', 'Jihočeský kraj': 'Jihočeský',
+  'Západní Čechy': 'Plzeňský', 'Plzeňský kraj': 'Plzeňský',
+  'Karlovarský kraj': 'Karlovarský',
+  'Severní Čechy': 'Ústecký', 'Ústecký kraj': 'Ústecký',
+  'Liberecký kraj': 'Liberecký',
+  'Královéhradecký kraj': 'Královéhradecký',
+  'Pardubický kraj': 'Pardubický',
+  'Kraj Vysočina': 'Vysočina',
+  'Jižní Morava': 'Jihomoravský', 'Jihomoravský kraj': 'Jihomoravský',
+  'Střední Morava': 'Olomoucký', 'Olomoucký kraj': 'Olomoucký',
+  'Zlínský kraj': 'Zlínský',
+  'Moravskoslezský kraj': 'Moravskoslezský', 'Moravskoslezský': 'Moravskoslezský',
+}
+function normalizeKraj(name) { return KRAJ_NORMALIZE[name] || name || null }
+
 function getInitials(name) { return name ? name.slice(0, 2).toUpperCase() : '??' }
 
 export default function PassportScreen({ onBack }) {
@@ -37,7 +55,7 @@ export default function PassportScreen({ onBack }) {
     async function load() {
       const { data: runs } = await supabase
         .from('user_route_runs')
-        .select('completed_at, routes(region, distance_km)')
+        .select('completed_at, total_km, kraj, routes(region, distance_km)')
         .eq('user_id', user.id)
         .eq('is_completed', true)
         .order('completed_at', { ascending: true })
@@ -47,10 +65,12 @@ export default function PassportScreen({ onBack }) {
       let count = 0
 
       for (const run of runs ?? []) {
-        const region = run.routes?.region
-        km += run.routes?.distance_km ?? 0
+        // Use kraj from run (new), fall back to route region (old), normalize both
+        const rawRegion = run.kraj || run.routes?.region
+        const region = normalizeKraj(rawRegion)
+        km += run.total_km ?? run.routes?.distance_km ?? 0
         count++
-        if (region && !regions[region]) {
+        if (region && REGIONS.includes(region) && !regions[region]) {
           regions[region] = run.completed_at ? new Date(run.completed_at).toLocaleDateString() : ''
         }
       }
