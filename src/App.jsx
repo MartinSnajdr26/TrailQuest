@@ -94,15 +94,19 @@ function AppShell() {
       routeGeometry = route.gpx_data
     }
     let runId = null
-    try {
-      const { data: run } = await supabase.from('user_route_runs').insert({
-        user_id: user?.id, route_id: route.id, started_at: new Date().toISOString(), is_completed: false,
-        activity_type: route.activity_type || 'hiking', region: route.region || null,
-        kraj: inferKraj(route.start_lat, route.start_lng), experience_type: route.experience_type || null,
-      }).select('id').single()
-      runId = run?.id ?? null
-    } catch (e) { console.warn('Could not create route run:', e) }
-    setActiveHike({ route, challenges, routeGeometry, runId, startedAt: new Date().toISOString(), completedChallengeIds: [], walkedKm: 0, totalPausedMs: 0 })
+    const startedAt = new Date().toISOString()
+    if (user?.id && route.id) {
+      try {
+        const { data: run, error } = await supabase.from('user_route_runs').insert({
+          user_id: user.id, route_id: route.id, started_at: startedAt, is_completed: false,
+          activity_type: route.activity_type || 'hiking', region: route.region || null,
+          kraj: inferKraj(route.start_lat, route.start_lng), experience_type: route.experience_type || null,
+        }).select('id').single()
+        if (error) console.error('Run create error:', error.message, error.details)
+        else runId = run?.id ?? null
+      } catch (e) { console.error('Run create exception:', e) }
+    }
+    setActiveHike({ route, challenges, routeGeometry, runId, startedAt, completedChallengeIds: [], walkedKm: 0, totalPausedMs: 0 })
     setHikeVisible(true)
   }
 
@@ -122,19 +126,35 @@ function AppShell() {
     }
 
     const route = activeHike?.route
-    const runId = activeHike?.runId
+    let runId = activeHike?.runId
     const hikeWeather = result?.weather
+    const now = new Date().toISOString()
 
-    // Save run completion with full stats
+    // Save run — update existing or create new if start-time insert failed
     if (runId) {
       const u = {
-        completed_at: new Date().toISOString(), is_completed: true,
+        completed_at: now, is_completed: true,
         total_km: parseFloat(result.walkedKm ?? route?.distance_km ?? 0),
         challenges_completed: result.completedCount ?? 0,
       }
       if (hikeWeather) { u.weather_temp_c = hikeWeather.temp_c; u.weather_condition = hikeWeather.condition; u.weather_rain_mm = hikeWeather.rain_mm; u.weather_snow_cm = hikeWeather.snow_cm }
       const { error } = await supabase.from('user_route_runs').update(u).eq('id', runId)
-      if (error) console.warn('Run update error:', error.message)
+      if (error) console.error('Run update error:', error.message, error.details)
+    } else if (user?.id && route?.id) {
+      // Fallback: create the run now (start insert must have failed)
+      console.warn('No runId — creating run at finish time')
+      const row = {
+        user_id: user.id, route_id: route.id, activity_type: route.activity_type || 'hiking',
+        started_at: activeHike?.startedAt || now, completed_at: now, is_completed: true,
+        total_km: parseFloat(result.walkedKm ?? route?.distance_km ?? 0),
+        challenges_completed: result.completedCount ?? 0,
+        region: route.region || null, kraj: inferKraj(route.start_lat, route.start_lng),
+        experience_type: route.experience_type || null,
+      }
+      if (hikeWeather) { row.weather_temp_c = hikeWeather.temp_c; row.weather_condition = hikeWeather.condition; row.weather_rain_mm = hikeWeather.rain_mm; row.weather_snow_cm = hikeWeather.snow_cm }
+      const { data: run, error } = await supabase.from('user_route_runs').insert(row).select('id').single()
+      if (error) console.error('Run fallback insert error:', error.message, error.details)
+      else runId = run?.id
     }
 
     // Sync user totals (fallback if DB trigger not yet created)
