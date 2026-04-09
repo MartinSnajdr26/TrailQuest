@@ -308,7 +308,8 @@ export default function ActiveHikeScreen({ route, challenges, routeGeometry, run
       const dist = haversineDistance(coord, [Number(next.lng), Number(next.lat)])
       setNextDist(Math.round(dist))
       const nextKey = next.id ?? `ch-${sortedChallenges.indexOf(next)}`
-      if (dist <= 100 && !triggeredIdsRef.current.has(nextKey)) {
+      const radius = next.trigger_radius_m ?? next.content_json?.trigger_radius_m ?? 100
+      if (dist <= radius && !triggeredIdsRef.current.has(nextKey)) {
         triggeredIdsRef.current.add(nextKey); setActiveChallenge(next)
         audioGuide.speak(`Blížíš se k zastávce ${sortedChallenges.indexOf(next) + 1}. ${next.content_json?.place_name ?? next.title ?? ''}`, 'high')
       }

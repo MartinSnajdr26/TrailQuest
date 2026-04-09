@@ -10,6 +10,21 @@ import { selectStory, getStopNarrative } from './storySystem.js'
 
 export { clearPOICache }
 
+const MIN_STOP_DISTANCE_M = 150
+
+function removeTooClosePOIs(pois, minDistM) {
+  const result = []
+  for (const poi of pois) {
+    const tooClose = result.some(ex => haversineDistance(
+      [Number(ex.gps_lng ?? ex.lng), Number(ex.gps_lat ?? ex.lat)],
+      [Number(poi.gps_lng ?? poi.lng), Number(poi.gps_lat ?? poi.lat)]
+    ) < minDistM)
+    if (!tooClose) result.push(poi)
+    else console.warn(`Removed too-close POI: ${poi.name}`)
+  }
+  return result
+}
+
 export async function generateSmartRoute({
   mode, activity, experienceType, startLat, startLng, startName, endLat, endLng,
   isLoop, distanceKm, challengeCount, variantTheme, manualPOIs,
@@ -21,8 +36,11 @@ export async function generateSmartRoute({
   if (precomputedGeometry && !dryRun) {
     console.log('Using precomputed route geometry')
     const routeCoords = precomputedGeometry?.geometry?.coordinates ?? precomputedGeometry?.coordinates ?? []
-    const pois = manualPOIs?.length > 0 ? manualPOIs : []
-    const points = pois.map((p, i) => ({ ...p, ...placeChallengeTrigger(routeCoords, Number(p.gps_lat ?? p.lat), Number(p.gps_lng ?? p.lng)), stopIndex: i }))
+    const pois = removeTooClosePOIs(manualPOIs?.length > 0 ? manualPOIs : [], MIN_STOP_DISTANCE_M)
+    const points = pois.map((p, i) => {
+      const next = pois[i + 1]
+      return { ...p, ...placeChallengeTrigger(routeCoords, Number(p.gps_lat ?? p.lat), Number(p.gps_lng ?? p.lng), next ? Number(next.gps_lat ?? next.lat) : null, next ? Number(next.gps_lng ?? next.lng) : null), stopIndex: i }
+    })
     let rebusWord = experienceType === 'rebus' ? generateRebus(challengeCount) : null
     const story = selectedStory ?? await selectStory(startName)
     onProgress?.('🧩 Připravuji výzvy...')
@@ -124,9 +142,13 @@ export async function generateSmartRoute({
   const routeCoords = routeResult.geometry?.geometry?.coordinates ?? routeResult.geometry?.coordinates ?? []
   const routeKm = routeResult.distance / 1000
 
-  // 7. Triggers
+  // 7. Filter too-close POIs + Triggers
   onProgress?.('📍 Rozmísťuji výzvy...')
-  const points = selected.map((poi, i) => ({ ...poi, ...placeChallengeTrigger(routeCoords, Number(poi.gps_lat ?? poi.lat), Number(poi.gps_lng ?? poi.lng)), stopIndex: i }))
+  selected = removeTooClosePOIs(selected, MIN_STOP_DISTANCE_M)
+  const points = selected.map((poi, i) => {
+    const next = selected[i + 1]
+    return { ...poi, ...placeChallengeTrigger(routeCoords, Number(poi.gps_lat ?? poi.lat), Number(poi.gps_lng ?? poi.lng), next ? Number(next.gps_lat ?? next.lat) : null, next ? Number(next.gps_lng ?? next.lng) : null), stopIndex: i }
+  })
 
   // 8. Rebus
   let rebusWord = experienceType === 'rebus' ? generateRebus(challengeCount) : null
