@@ -61,19 +61,23 @@ export default function ChallengeCard({ challenge, challengeIndex, totalChalleng
   }
 
   // ── Rebus handlers ─────────────────────────────────────
-  function handleRebusAnswer(opt) {
-    if (rebusAnswer !== null && rebusCorrect) return // already answered correctly
-    setRebusAnswer(opt)
-    const correct = opt.startsWith(cj.correct_answer + ':') || opt.split(':')[0].trim() === cj.correct_answer
-    setRebusCorrect(correct)
-    if (correct) {
-      setTimeout(() => { setRebusPhase('result'); setLetterRevealed(false); setTimeout(() => setLetterRevealed(true), 300) }, 600)
-    }
-  }
+  const [wrongFlash, setWrongFlash] = useState(false)
+  const [wrongAttempts, setWrongAttempts] = useState(0)
 
-  function handleRebusRetry() {
-    setRebusAnswer(null)
-    setRebusCorrect(null)
+  function handleRebusAnswer(opt) {
+    if (rebusCorrect || wrongFlash) return
+    const correct = opt.startsWith(cj.correct_answer + ':') || opt.split(':')[0].trim() === cj.correct_answer
+    if (correct) {
+      setRebusAnswer(opt)
+      setRebusCorrect(true)
+      setTimeout(() => { setRebusPhase('result'); setLetterRevealed(false); setTimeout(() => setLetterRevealed(true), 300) }, 600)
+    } else {
+      setWrongAttempts(prev => prev + 1)
+      setWrongFlash(true)
+      setRebusAnswer(null)
+      setRebusCorrect(null)
+      setTimeout(() => setWrongFlash(false), 1500)
+    }
   }
 
   function handleRebusHint() {
@@ -150,52 +154,38 @@ export default function ChallengeCard({ challenge, challengeIndex, totalChalleng
                 "{cj.riddle}"
               </p>
 
+              {/* Wrong answer flash */}
+              {wrongFlash && (
+                <div className="rebus-shake" style={{
+                  background: 'rgba(239,68,68,0.12)', border: '1.5px solid rgba(239,68,68,0.4)',
+                  borderRadius: 12, padding: '14px 16px', marginBottom: 12, textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: 24, marginBottom: 4 }}>❌</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: '#f87171' }}>
+                    {cj.wrong_answer_text || 'Špatná odpověď! Zkus to znovu.'}
+                  </div>
+                </div>
+              )}
+
               {/* Answer options grid */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
                 {options.map(opt => {
                   const isSelected = rebusAnswer === opt
-                  const optKey = opt.split(':')[0].trim()
-                  const isCorrectOpt = optKey === cj.correct_answer
                   let borderColor = 'var(--border)'
                   let bg = 'var(--bg-raised)'
                   if (isSelected && rebusCorrect === true) { borderColor = 'var(--accent)'; bg = 'var(--accent-dim)' }
-                  else if (isSelected && rebusCorrect === false) { borderColor = '#f87171'; bg = 'rgba(248,113,113,0.1)' }
-                  // After wrong answer, highlight correct one
-                  else if (rebusAnswer && rebusCorrect === false && isCorrectOpt) { borderColor = 'var(--accent)'; bg = 'var(--accent-dim)' }
                   return (
-                    <button key={opt} onClick={() => handleRebusAnswer(opt)} disabled={rebusAnswer !== null} style={{
+                    <button key={opt} onClick={() => handleRebusAnswer(opt)} disabled={wrongFlash || rebusCorrect} style={{
                       padding: '14px 8px', borderRadius: 12, border: `1.5px solid ${borderColor}`, background: bg,
-                      color: 'var(--text-primary)', fontSize: 14, fontWeight: 500, cursor: rebusAnswer ? 'default' : 'pointer',
-                      transition: 'all 150ms', textAlign: 'center',
+                      color: 'var(--text-primary)', fontSize: 14, fontWeight: 500,
+                      cursor: wrongFlash || rebusCorrect ? 'default' : 'pointer',
+                      opacity: wrongFlash ? 0.5 : 1, transition: 'all 150ms', textAlign: 'center',
                     }}>
                       {opt}
                     </button>
                   )
                 })}
               </div>
-
-              {/* Wrong answer feedback */}
-              {rebusAnswer && rebusCorrect === false && (
-                <div style={{ textAlign: 'center', margin: '8px 0' }}>
-                  <p style={{ fontSize: 14, color: '#f87171', fontWeight: 500, marginBottom: 10 }}>
-                    ❌ {cj.wrong_answer_text}
-                  </p>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-                    <button onClick={handleRebusRetry} style={{
-                      padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)',
-                      color: 'var(--text)', fontSize: 13, cursor: 'pointer',
-                    }}>🔄 Zkusit znovu</button>
-                    <button onClick={handleRebusHint} disabled={hintLevel >= 3} style={{
-                      padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)',
-                      color: 'var(--text)', fontSize: 13, cursor: hintLevel >= 3 ? 'default' : 'pointer', opacity: hintLevel >= 3 ? 0.4 : 1,
-                    }}>💡 Nápověda</button>
-                    <button onClick={handleRebusSkip} style={{
-                      padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-raised)',
-                      color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer',
-                    }}>⏭ {skipConfirm ? 'Potvrdit přeskočení' : 'Přeskočit'}</button>
-                  </div>
-                </div>
-              )}
 
               {/* Skip confirm dialog */}
               {skipConfirm && rebusCorrect !== false && (
